@@ -184,6 +184,7 @@ class PromptBook(QMainWindow):
     def setup_ui(self):
         self.setWindowTitle("프롬프트 북")
         self.setMinimumSize(1000, 600)
+        self.setup_menubar()
         self.setup_central_widget()
         self.setup_book_list()
         self.setup_character_list()
@@ -191,6 +192,28 @@ class PromptBook(QMainWindow):
         self.setup_image_view()
         self.setup_buttons()
         self.update_all_buttons_state()
+
+    def setup_menubar(self):
+        menubar = self.menuBar()
+        
+        # 파일 메뉴
+        file_menu = menubar.addMenu("파일")
+        
+        # 선택된 북 저장하기
+        save_book_action = QAction("선택된 북 저장하기", self)
+        save_book_action.triggered.connect(self.save_selected_book)
+        file_menu.addAction(save_book_action)
+        
+        # 저장된 북 불러오기
+        load_book_action = QAction("저장된 북 불러오기", self)
+        load_book_action.triggered.connect(self.load_saved_book)
+        file_menu.addAction(load_book_action)
+        
+        # 테마 메뉴
+        theme_menu = menubar.addMenu("테마")
+        
+        # 정보 메뉴
+        info_menu = menubar.addMenu("정보")
 
     def setup_central_widget(self):
         central_widget = QWidget()
@@ -983,6 +1006,161 @@ class PromptBook(QMainWindow):
         
         self.save_to_file()
         print(f"[DEBUG] add_book 완료")  # 디버그 추가
+
+    def save_selected_book(self):
+        """선택된 북을 zip 파일로 저장합니다."""
+        if not self.current_book:
+            QMessageBox.warning(self, "저장 실패", "선택된 북이 없습니다.")
+            return
+            
+        # 파일 저장 대화상자
+        default_name = f"{self.current_book}.zip"
+        path, _ = QFileDialog.getSaveFileName(self, "북 저장", default_name, "Zip Files (*.zip)")
+        if not path:
+            return
+            
+        try:
+            from zipfile import ZipFile
+            
+            with ZipFile(path, 'w') as zipf:
+                # 현재 북 데이터 가져오기
+                book_data = self.state.books[self.current_book]
+                pages = book_data.get("pages", [])
+                
+                # 내보낼 데이터 준비
+                export_data = {
+                    "book_name": self.current_book,
+                    "emoji": book_data.get("emoji", "📕"),
+                    "pages": []
+                }
+                
+                # 각 페이지 처리
+                for i, page in enumerate(pages):
+                    page_copy = dict(page)
+                    
+                    # 이미지가 있으면 zip에 포함
+                    img_path = page.get("image_path")
+                    if img_path and os.path.exists(img_path):
+                        # zip 내부 경로 생성
+                        filename = f"images/{i}_{os.path.basename(img_path)}"
+                        zipf.write(img_path, filename)
+                        page_copy["image_path"] = filename
+                    else:
+                        page_copy["image_path"] = ""
+                        
+                    export_data["pages"].append(page_copy)
+                
+                # 북 데이터를 JSON으로 저장
+                zipf.writestr("book_data.json", json.dumps(export_data, ensure_ascii=False, indent=2))
+                
+            QMessageBox.information(self, "저장 완료", f"'{self.current_book}' 북이 성공적으로 저장되었습니다.")
+            print(f"[DEBUG] 선택된 북 저장 완료: {self.current_book} -> {path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "저장 실패", f"북 저장 중 오류가 발생했습니다:\n{str(e)}")
+            print(f"[ERROR] 북 저장 실패: {e}")
+
+    def load_saved_book(self):
+        """저장된 북을 zip 파일에서 불러옵니다."""
+        # 파일 열기 대화상자
+        path, _ = QFileDialog.getOpenFileName(self, "북 불러오기", "", "Zip Files (*.zip)")
+        if not path:
+            return
+            
+        try:
+            from zipfile import ZipFile
+            import tempfile
+            
+            # 임시 디렉토리에 압축 해제
+            temp_dir = tempfile.mkdtemp()
+            
+            with ZipFile(path, 'r') as zipf:
+                zipf.extractall(temp_dir)
+                
+                # book_data.json 파일 읽기
+                json_path = os.path.join(temp_dir, "book_data.json")
+                if not os.path.exists(json_path):
+                    QMessageBox.warning(self, "불러오기 실패", "올바른 북 파일이 아닙니다.")
+                    return
+                    
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    book_data = json.load(f)
+                
+                # 북 이름 중복 체크
+                original_name = book_data.get("book_name", "불러온 북")
+                book_name = original_name
+                existing_names = set(self.state.books.keys())
+                
+                if book_name in existing_names:
+                    for i in range(1, 1000):
+                        candidate = f"{original_name} ({i})"
+                        if candidate not in existing_names:
+                            book_name = candidate
+                            break
+                
+                # 이미지 파일들을 images 폴더로 복사
+                pages = book_data.get("pages", [])
+                for page in pages:
+                    rel_path = page.get("image_path")
+                    if rel_path:
+                        full_path = os.path.join(temp_dir, rel_path)
+                        if os.path.exists(full_path):
+                            # images 폴더 생성
+                            os.makedirs("images", exist_ok=True)
+                            # 고유한 파일명 생성
+                            dest_filename = f"{book_name}_{os.path.basename(full_path)}"
+                            dest_path = os.path.join("images", dest_filename)
+                            
+                            # 파일명 중복 방지
+                            counter = 1
+                            while os.path.exists(dest_path):
+                                name, ext = os.path.splitext(dest_filename)
+                                dest_filename = f"{name}_{counter}{ext}"
+                                dest_path = os.path.join("images", dest_filename)
+                                counter += 1
+                            
+                            shutil.copy(full_path, dest_path)
+                            page["image_path"] = dest_path
+                        else:
+                            page["image_path"] = ""
+                
+                # 새 북을 books에 추가
+                emoji = book_data.get("emoji", "📕")
+                self.state.books[book_name] = {
+                    "emoji": emoji,
+                    "pages": pages
+                }
+                
+                # 북 리스트 UI 업데이트
+                item = QListWidgetItem(f"{emoji} {book_name}")
+                item.setData(Qt.UserRole, book_name)
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
+                self.book_list.addItem(item)
+                
+                # 북 정렬 적용
+                if hasattr(self, 'book_sort_selector') and not self.book_sort_custom:
+                    self.handle_book_sort()
+                    # 정렬 후 새로 생성된 아이템 찾기
+                    for i in range(self.book_list.count()):
+                        book_item = self.book_list.item(i)
+                        if book_item.data(Qt.UserRole) == book_name:
+                            item = book_item
+                            break
+                
+                # 새로 불러온 북 선택
+                if item:
+                    self.book_list.setCurrentItem(item)
+                    self.on_book_selected(self.book_list.row(item))
+                
+                # 데이터 저장
+                self.save_to_file()
+                
+                QMessageBox.information(self, "불러오기 완료", f"'{book_name}' 북이 성공적으로 불러와졌습니다.")
+                print(f"[DEBUG] 북 불러오기 완료: {book_name}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "불러오기 실패", f"북 불러오기 중 오류가 발생했습니다:\n{str(e)}")
+            print(f"[ERROR] 북 불러오기 실패: {e}")
 
     def add_character(self):
         if not self.current_book:
