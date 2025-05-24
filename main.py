@@ -39,17 +39,20 @@ class ImageView(QGraphicsView):
         # 캐시 모드 설정
         self.setCacheMode(QGraphicsView.CacheBackground)
         
+        # 드래그 앤 드롭 활성화
+        self.setAcceptDrops(True)
+        
         # 드래그 앤 드롭 안내 라벨
         self.drop_hint = QLabel(self.viewport())
-        self.drop_hint.setText("이미지 파일을 이곳에\n드래그 앤 드롭 하세요")
+        self.drop_hint.setText("이미지 파일을 여기에\n드래그 앤 드롭하세요\n\n지원 형식: PNG, JPG, JPEG, BMP, GIF")
         self.drop_hint.setAlignment(Qt.AlignCenter)
         self.drop_hint.setStyleSheet("""
             QLabel {
-                color: #666;
-                background-color: transparent;
+                color: #888;
+                background-color: rgba(240, 240, 240, 50);
                 font-size: 14px;
-                padding: 20px;
-                border: 2px dashed #666;
+                padding: 30px;
+                border: 2px dashed #bbb;
                 border-radius: 10px;
             }
         """)
@@ -64,8 +67,9 @@ class ImageView(QGraphicsView):
                 parent.update_image_fit()
                 break
             parent = parent.parent()
-        # 라벨 위치 업데이트
+        # 라벨 위치 및 가시성 업데이트
         self.update_drop_hint_position()
+        self.update_drop_hint_visibility()
         
     def update_drop_hint_position(self):
         if not hasattr(self, 'drop_hint'):
@@ -75,8 +79,8 @@ class ImageView(QGraphicsView):
         viewport_rect = self.viewport().rect()
         
         # 라벨 크기 계산
-        hint_width = min(300, viewport_rect.width() - 40)  # 여백 20px
-        hint_height = 80
+        hint_width = min(350, viewport_rect.width() - 40)  # 여백 20px
+        hint_height = 120  # 텍스트가 늘어났으므로 높이 증가
         
         # 중앙 위치 계산
         x = (viewport_rect.width() - hint_width) // 2
@@ -84,6 +88,126 @@ class ImageView(QGraphicsView):
         
         # 라벨 위치와 크기 설정
         self.drop_hint.setGeometry(x, y, hint_width, hint_height)
+    
+    def set_drop_hint_visible(self, visible):
+        """드롭 힌트 표시/숨김 제어"""
+        if hasattr(self, 'drop_hint'):
+            self.drop_hint.setVisible(visible)
+    
+    def update_drop_hint_visibility(self):
+        """드롭 힌트 표시 여부를 상태에 따라 업데이트"""
+        if not hasattr(self, 'drop_hint'):
+            return
+            
+        # 부모 PromptBook 인스턴스 찾기
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, PromptBook):
+                # 페이지가 선택되어 있고 이미지가 없을 때만 표시
+                has_page_selected = (parent.current_index >= 0 and 
+                                   0 <= parent.current_index < len(parent.state.characters))
+                has_image = (has_page_selected and 
+                           parent.state.characters[parent.current_index].get("image_path") and
+                           os.path.exists(parent.state.characters[parent.current_index]["image_path"]))
+                
+                # 페이지가 선택되어 있고 이미지가 없을 때만 드롭 힌트 표시
+                should_show = has_page_selected and not has_image
+                self.drop_hint.setVisible(should_show)
+                return
+            parent = parent.parent()
+        
+        # PromptBook을 찾지 못한 경우 숨김
+        self.drop_hint.setVisible(False)
+    
+    def dragEnterEvent(self, event):
+        """드래그 엔터 이벤트 처리"""
+        if event.mimeData().hasUrls():
+            # URL이 있는지 확인하고 이미지 파일인지 검사
+            urls = event.mimeData().urls()
+            if urls and len(urls) == 1:  # 하나의 파일만 허용
+                file_path = urls[0].toLocalFile()
+                if self.is_image_file(file_path):
+                    event.acceptProposedAction()
+                    # 드래그 중일 때 시각적 피드백
+                    self.drop_hint.setStyleSheet("""
+                        QLabel {
+                            color: #2c5aa0;
+                            background-color: rgba(44, 90, 160, 30);
+                            font-size: 14px;
+                            padding: 30px;
+                            border: 2px dashed #2c5aa0;
+                            border-radius: 10px;
+                        }
+                    """)
+                    return
+        event.ignore()
+    
+    def dragLeaveEvent(self, event):
+        """드래그 리브 이벤트 처리"""
+        # 원래 스타일로 복원
+        self.drop_hint.setStyleSheet("""
+            QLabel {
+                color: #888;
+                background-color: rgba(240, 240, 240, 50);
+                font-size: 14px;
+                padding: 30px;
+                border: 2px dashed #bbb;
+                border-radius: 10px;
+            }
+        """)
+        event.accept()
+    
+    def dragMoveEvent(self, event):
+        """드래그 무브 이벤트 처리"""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls and len(urls) == 1:
+                file_path = urls[0].toLocalFile()
+                if self.is_image_file(file_path):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+    
+    def dropEvent(self, event):
+        """드롭 이벤트 처리"""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls and len(urls) == 1:
+                file_path = urls[0].toLocalFile()
+                if self.is_image_file(file_path):
+                    # 부모 PromptBook 인스턴스 찾기
+                    parent = self.parent()
+                    while parent is not None:
+                        if isinstance(parent, PromptBook):
+                            # 이미지 로드 기능 호출
+                            parent.load_image_from_path(file_path)
+                            break
+                        parent = parent.parent()
+                    
+                    # 원래 스타일로 복원
+                    self.drop_hint.setStyleSheet("""
+                        QLabel {
+                            color: #888;
+                            background-color: rgba(240, 240, 240, 50);
+                            font-size: 14px;
+                            padding: 30px;
+                            border: 2px dashed #bbb;
+                            border-radius: 10px;
+                        }
+                    """)
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+    
+    def is_image_file(self, file_path):
+        """이미지 파일인지 확인"""
+        if not file_path or not os.path.exists(file_path):
+            return False
+        
+        # 지원하는 이미지 확장자
+        image_extensions = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif', '.webp'}
+        file_ext = os.path.splitext(file_path)[1].lower()
+        return file_ext in image_extensions
 
 class BookNameDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
@@ -100,6 +224,82 @@ class BookNameDelegate(QStyledItemDelegate):
             emoji = self.parent().state.books[name].get("emoji", "📕")
         model.setData(index, f"{emoji} {name}", Qt.DisplayRole)
         model.setData(index, name, Qt.UserRole)
+
+class ClickableLabel(QLabel):
+    """클릭 가능한 라벨"""
+    clicked = Signal()
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+class PageItemWidget(QWidget):
+    def __init__(self, name, is_favorite=False, parent=None):
+        super().__init__(parent)
+        self.page_name = name  # 페이지 이름 저장
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)  # 여백 줄이기
+        layout.setSpacing(2)  # 간격 대폭 줄이기
+        
+        # 별 표시 라벨 (클릭 가능)
+        self.star_label = ClickableLabel()
+        self.star_label.setFixedWidth(16)  # 폭 줄이기
+        self.star_label.setAlignment(Qt.AlignCenter)
+        self.star_label.setCursor(Qt.PointingHandCursor)  # 마우스 커서 변경
+        self.star_label.setToolTip("클릭하여 즐겨찾기 토글")
+        self.star_label.clicked.connect(self.toggle_favorite)
+        
+        # 페이지 아이콘 라벨
+        self.page_label = QLabel("📄")
+        self.page_label.setFixedWidth(16)  # 폭 줄이기
+        
+        # 페이지 이름 라벨
+        self.name_label = QLabel(name)
+        
+        # 레이아웃에 추가
+        layout.addWidget(self.star_label)
+        layout.addWidget(self.page_label)
+        layout.addWidget(self.name_label)
+        layout.addStretch()  # 오른쪽 여백
+        
+        # 즐겨찾기 상태 설정
+        self.set_favorite(is_favorite)
+    
+    def toggle_favorite(self):
+        """즐겨찾기 토글 - 부모 PromptBook 인스턴스 찾아서 처리"""
+        # 부모 위젯 체인을 따라 PromptBook 인스턴스 찾기
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, PromptBook):
+                # 현재 페이지에 대해 즐겨찾기 토글
+                for char in parent.state.characters:
+                    if char.get("name") == self.page_name:
+                        is_favorite = not char.get("favorite", False)
+                        char["favorite"] = is_favorite
+                        
+                        # 상태 업데이트
+                        if parent.current_book:
+                            parent.state.books[parent.current_book]["pages"] = parent.state.characters
+                        
+                        # 정렬 적용 및 리스트 갱신
+                        if not parent.sort_mode_custom:
+                            current_mode = parent.sort_selector.currentText() if hasattr(parent, "sort_selector") else "오름차순 정렬"
+                            from promptbook_features import sort_characters
+                            parent.state.characters = sort_characters(parent.state.characters, current_mode)
+                        
+                        parent.refresh_character_list(selected_name=self.page_name)
+                        parent.save_to_file()
+                        return
+                break
+            parent = parent.parent()
+    
+    def set_favorite(self, is_favorite):
+        self.star_label.setText("⭐" if is_favorite else "")
+    
+    def set_name(self, name):
+        self.name_label.setText(name)
 
 class CharacterList(QListWidget):
     def __init__(self, parent=None):
@@ -263,7 +463,7 @@ class PromptBook(QMainWindow):
         self.left_layout.addWidget(self.book_sort_selector)
         self.left_layout.addWidget(self.book_list)
         
-        self.book_add_button = QPushButton("북 추가")
+        self.book_add_button = QPushButton("📚 북 추가")
         self.book_add_button.clicked.connect(self.add_book)
         self.left_layout.addWidget(self.book_add_button)
 
@@ -289,20 +489,14 @@ class PromptBook(QMainWindow):
         self.left_layout.addWidget(QLabel("페이지 리스트"))
         self.left_layout.addWidget(self.sort_selector)
         self.left_layout.addWidget(self.char_list)
+        
+        # 페이지 추가 버튼
+        self.add_button = QPushButton("➕ 페이지 추가")
+        self.add_button.clicked.connect(self.add_character)
+        self.add_button.setEnabled(False)
+        self.left_layout.addWidget(self.add_button)
 
-        # 리스트 저장/불러오기 버튼 추가
-        self.list_save_button = QPushButton("리스트 저장")
-        self.list_save_button.clicked.connect(self.export_character_list)
-        self.list_save_button.setEnabled(False)
-        
-        self.list_load_button = QPushButton("리스트 불러오기")
-        self.list_load_button.clicked.connect(self.import_character_list)
-        self.list_load_button.setEnabled(False)
-        
-        list_button_layout = QHBoxLayout()
-        list_button_layout.addWidget(self.list_save_button)
-        list_button_layout.addWidget(self.list_load_button)
-        self.left_layout.addLayout(list_button_layout)
+
 
     def setup_input_fields(self):
         self.name_input = QLineEdit()
@@ -348,27 +542,22 @@ class PromptBook(QMainWindow):
         # 페이지 관리 버튼들
         button_layout = QHBoxLayout()
         
-        self.add_button = QPushButton("페이지 추가")
-        self.add_button.clicked.connect(self.add_character)
-        self.add_button.setEnabled(False)
-        
-        self.save_button = QPushButton("저장")
+        self.save_button = QPushButton("💾 저장")
         self.save_button.clicked.connect(lambda: (self.save_current_character(), QToolTip.showText(self.save_button.mapToGlobal(self.save_button.rect().center()), "페이지가 저장되었습니다.")))
         self.save_button.setEnabled(False)
         
-        self.copy_button = QPushButton("프롬프트 복사")
+        self.copy_button = QPushButton("📋 프롬프트 복사")
         self.copy_button.clicked.connect(self.copy_prompt_to_clipboard)
         self.copy_button.setEnabled(False)
         
-        self.duplicate_button = QPushButton("페이지 복제")
+        self.duplicate_button = QPushButton("📄 페이지 복제")
         self.duplicate_button.clicked.connect(self.duplicate_selected_character_with_tooltip)
         self.duplicate_button.setEnabled(False)
         
-        self.delete_button = QPushButton("페이지 삭제")
+        self.delete_button = QPushButton("🗑️ 페이지 삭제")
         self.delete_button.clicked.connect(self.delete_selected_character_with_tooltip)
         self.delete_button.setEnabled(False)
         
-        button_layout.addWidget(self.add_button)
         button_layout.addWidget(self.save_button)
         button_layout.addWidget(self.copy_button)
         button_layout.addWidget(self.duplicate_button)
@@ -379,11 +568,11 @@ class PromptBook(QMainWindow):
         # 이미지 관리 버튼들
         image_button_layout = QHBoxLayout()
         
-        self.image_load_btn = QPushButton("이미지 불러오기")
+        self.image_load_btn = QPushButton("🖼️ 이미지 불러오기")
         self.image_load_btn.clicked.connect(self.load_preview_image)
         self.image_load_btn.setEnabled(False)
         
-        self.image_remove_btn = QPushButton("이미지 제거")
+        self.image_remove_btn = QPushButton("🗑️ 이미지 제거")
         self.image_remove_btn.clicked.connect(self.remove_preview_image)
         self.image_remove_btn.setEnabled(False)
         
@@ -395,7 +584,7 @@ class PromptBook(QMainWindow):
     def update_image_view(self, path):
         if not os.path.exists(path):
             self.image_scene.clear()
-            self.image_view.drop_hint.setVisible(True)
+            self.image_view.update_drop_hint_visibility()
             return
 
         # 이미지 리더 설정
@@ -408,14 +597,14 @@ class PromptBook(QMainWindow):
         original_size = reader.size()
         if not original_size.isValid():
             self.image_scene.clear()
-            self.image_view.drop_hint.setVisible(True)
+            self.image_view.update_drop_hint_visibility()
             return
 
         # 고품질 이미지 로딩
         image = reader.read()
         if image.isNull():
             self.image_scene.clear()
-            self.image_view.drop_hint.setVisible(True)
+            self.image_view.update_drop_hint_visibility()
             return
 
         # 이미지 품질 향상을 위한 변환 설정
@@ -429,8 +618,8 @@ class PromptBook(QMainWindow):
         pixmap_item.setShapeMode(QGraphicsPixmapItem.BoundingRectShape)  # 성능 최적화
         self.image_scene.addItem(pixmap_item)
         
-        # 이미지가 있을 때는 힌트 숨기기
-        self.image_view.drop_hint.setVisible(False)
+        # 이미지 상태에 따라 힌트 가시성 업데이트
+        self.image_view.update_drop_hint_visibility()
         
         # 이미지 크기 및 위치 조정
         self.update_image_fit()
@@ -548,10 +737,15 @@ class PromptBook(QMainWindow):
             if query in name or query in tags:
                 item = QListWidgetItem()
                 text = char.get("name", "(이름 없음)")
-                emoji = "⭐" if char.get("favorite") else "📄"
-                item.setText(f"{emoji} {text}")
+                is_favorite = char.get("favorite", False)
+                
+                # 커스텀 위젯 생성
+                widget = PageItemWidget(text, is_favorite)
                 item.setData(Qt.UserRole, text)
+                
                 self.char_list.addItem(item)
+                self.char_list.setItemWidget(item, widget)
+                item.setSizeHint(widget.sizeHint())
             item.setData(Qt.UserRole, i)
         self.char_list.blockSignals(False)
 
@@ -563,8 +757,15 @@ class PromptBook(QMainWindow):
             data["desc"] = self.desc_input.toPlainText()
             data["prompt"] = self.prompt_input.toPlainText()
             self.state.books[self.current_book]["pages"] = self.state.characters
-            emoji = "⭐" if data.get("favorite") else "📄"
-            self.char_list.item(self.current_index).setText(f"{emoji} {data["name"]}")
+            
+            # 현재 아이템의 위젯 업데이트
+            item = self.char_list.item(self.current_index)
+            if item:
+                widget = self.char_list.itemWidget(item)
+                if isinstance(widget, PageItemWidget):
+                    widget.set_name(data["name"])
+                    widget.set_favorite(data.get("favorite", False))
+            
             self.save_to_file()
 
     def on_character_selected(self, index):
@@ -596,7 +797,7 @@ class PromptBook(QMainWindow):
                         self.update_image_view(char["image_path"])
                     else:
                         self.image_scene.clear()
-                        self.image_view.drop_hint.setVisible(True)
+                        self.image_view.update_drop_hint_visibility()
                     break
         else:
             print("[DEBUG] 페이지 선택 해제")
@@ -606,7 +807,7 @@ class PromptBook(QMainWindow):
             self.desc_input.clear()
             self.prompt_input.clear()
             self.image_scene.clear()
-            self.image_view.drop_hint.setVisible(True)
+            self.image_view.update_drop_hint_visibility()
             
         self.update_all_buttons_state()
 
@@ -672,6 +873,8 @@ class PromptBook(QMainWindow):
         self.state.characters = []
         self.char_list.clear()
         self.current_book = None
+        self.image_scene.clear()
+        self.image_view.update_drop_hint_visibility()
         self.update_all_buttons_state()
 
     def closeEvent(self, event):
@@ -681,9 +884,6 @@ class PromptBook(QMainWindow):
     def update_all_buttons_state(self):
         enabled = self.current_book is not None
         self.add_button.setEnabled(enabled)
-        self.list_save_button.setEnabled(enabled)
-        self.list_load_button.setEnabled(enabled)
-        self.list_load_button.setEnabled(enabled)
         
         # 정렬 선택기 활성화/비활성화
         if hasattr(self, "sort_selector"):
@@ -734,10 +934,15 @@ class PromptBook(QMainWindow):
             if not query or query in name or query in tags:
                 item = QListWidgetItem()
                 text = char.get("name", "(이름 없음)")
-                emoji = "⭐" if char.get("favorite", False) else "📄"
-                item.setText(f"{emoji} {text}")
+                is_favorite = char.get("favorite", False)
+                
+                # 커스텀 위젯 생성
+                widget = PageItemWidget(text, is_favorite)
                 item.setData(Qt.UserRole, text)
+                
                 self.char_list.addItem(item)
+                self.char_list.setItemWidget(item, widget)
+                item.setSizeHint(widget.sizeHint())
                 
                 if text == selected_name:
                     selected_index = self.char_list.count() - 1
@@ -773,9 +978,15 @@ class PromptBook(QMainWindow):
             book_data = self.state.books.get(book_name, {})
             self.state.characters = book_data.get("pages", [])
             
+            # 현재 정렬 모드 적용 (커스텀 정렬이 아닌 경우)
+            if hasattr(self, 'sort_selector') and not self.sort_mode_custom and self.state.characters:
+                current_sort_mode = self.sort_selector.currentText()
+                print(f"[DEBUG] 북 선택 시 정렬 적용: {current_sort_mode}")
+                from promptbook_features import sort_characters
+                self.state.characters = sort_characters(self.state.characters, current_sort_mode)
+                self.state.books[self.current_book]["pages"] = self.state.characters
+            
             # 버튼 활성화
-            self.list_save_button.setEnabled(True)
-            self.list_load_button.setEnabled(True)
             self.add_button.setEnabled(True)
             
             # 페이지 리스트 업데이트 (선택된 페이지 없음)
@@ -789,14 +1000,15 @@ class PromptBook(QMainWindow):
             self.desc_input.clear()
             self.prompt_input.clear()
             self.image_scene.clear()
+            self.image_view.update_drop_hint_visibility()  # 드롭 힌트 가시성 업데이트
         else:
             # 북이 선택되지 않은 경우
             self.current_book = None
             self.state.characters = []
             self.char_list.clear()
-            self.list_save_button.setEnabled(False)
-            self.list_load_button.setEnabled(False)
             self.add_button.setEnabled(False)
+            self.image_scene.clear()
+            self.image_view.update_drop_hint_visibility()  # 드롭 힌트 가시성 업데이트
             
         self.update_all_buttons_state()
 
@@ -869,11 +1081,33 @@ class PromptBook(QMainWindow):
     def load_preview_image(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "이미지 불러오기", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
         if file_path:
-            if 0 <= self.current_index < len(self.state.characters):
-                self.state.characters[self.current_index]["image_path"] = file_path
-                self.edited = True
-                self.update_image_buttons_state()
-            self.update_image_view(file_path)
+            self.load_image_from_path(file_path)
+    
+    def load_image_from_path(self, file_path):
+        """파일 경로로부터 이미지를 로드하는 공통 메서드"""
+        if not file_path or not os.path.exists(file_path):
+            print(f"[ERROR] 이미지 파일이 존재하지 않습니다: {file_path}")
+            return
+            
+        # 현재 페이지가 선택되어 있는지 확인
+        if not (0 <= self.current_index < len(self.state.characters)):
+            QMessageBox.warning(self, "이미지 로드 실패", "먼저 페이지를 선택해 주세요.")
+            return
+            
+        # 이미지 파일 경로 저장
+        self.state.characters[self.current_index]["image_path"] = file_path
+        self.edited = True
+        self.update_image_buttons_state()
+        
+        # 이미지 뷰 업데이트
+        self.update_image_view(file_path)
+        
+        # 상태 저장
+        if self.current_book:
+            self.state.books[self.current_book]["pages"] = self.state.characters
+            self.save_to_file()
+            
+        print(f"[DEBUG] 이미지 로드 완료: {file_path}")
 
     def load_character(self, index):
         if 0 <= index < len(self.state.characters):
@@ -1107,11 +1341,35 @@ class PromptBook(QMainWindow):
         existing_names = set(self.state.books.keys())
         
         if book_name in existing_names:
-            for i in range(1, 1000):
-                candidate = f"{original_name} ({i})"
-                if candidate not in existing_names:
-                    book_name = candidate
-                    break
+            # 중복된 북 이름이 있을 때 사용자에게 선택권 제공
+            msgBox = QMessageBox()
+            msgBox.setWindowTitle("북 이름 중복")
+            msgBox.setText(f"'{original_name}' 북이 이미 존재합니다.")
+            msgBox.setInformativeText("어떻게 하시겠습니까?")
+            
+            overwrite_btn = msgBox.addButton("덮어쓰기", QMessageBox.AcceptRole)
+            add_new_btn = msgBox.addButton("새로 추가", QMessageBox.ActionRole)
+            cancel_btn = msgBox.addButton("취소", QMessageBox.RejectRole)
+            
+            msgBox.setDefaultButton(cancel_btn)
+            msgBox.exec()
+            
+            if msgBox.clickedButton() == overwrite_btn:
+                # 기존 북 덮어쓰기
+                book_name = original_name
+                print(f"[DEBUG] 기존 북 덮어쓰기: {book_name}")
+            elif msgBox.clickedButton() == add_new_btn:
+                # 새 이름으로 추가
+                for i in range(1, 1000):
+                    candidate = f"{original_name} ({i})"
+                    if candidate not in existing_names:
+                        book_name = candidate
+                        break
+                print(f"[DEBUG] 새 이름으로 추가: {book_name}")
+            else:
+                # 취소
+                print("[DEBUG] 북 불러오기 취소")
+                return
         
         # 이미지 파일들을 images 폴더로 복사
         pages = book_data.get("pages", [])
@@ -1177,11 +1435,35 @@ class PromptBook(QMainWindow):
         existing_names = set(self.state.books.keys())
         
         if book_name in existing_names:
-            for i in range(1, 1000):
-                candidate = f"{base_name} ({i})"
-                if candidate not in existing_names:
-                    book_name = candidate
-                    break
+            # 중복된 북 이름이 있을 때 사용자에게 선택권 제공
+            msgBox = QMessageBox()
+            msgBox.setWindowTitle("북 이름 중복")
+            msgBox.setText(f"'{base_name}' 북이 이미 존재합니다.")
+            msgBox.setInformativeText("어떻게 하시겠습니까?")
+            
+            overwrite_btn = msgBox.addButton("덮어쓰기", QMessageBox.AcceptRole)
+            add_new_btn = msgBox.addButton("새로 추가", QMessageBox.ActionRole)
+            cancel_btn = msgBox.addButton("취소", QMessageBox.RejectRole)
+            
+            msgBox.setDefaultButton(cancel_btn)
+            msgBox.exec()
+            
+            if msgBox.clickedButton() == overwrite_btn:
+                # 기존 북 덮어쓰기
+                book_name = base_name
+                print(f"[DEBUG] 기존 북 덮어쓰기: {book_name}")
+            elif msgBox.clickedButton() == add_new_btn:
+                # 새 이름으로 추가
+                for i in range(1, 1000):
+                    candidate = f"{base_name} ({i})"
+                    if candidate not in existing_names:
+                        book_name = candidate
+                        break
+                print(f"[DEBUG] 새 이름으로 추가: {book_name}")
+            else:
+                # 취소
+                print("[DEBUG] 북 불러오기 취소")
+                return
         
         # 이미지 파일들을 images 폴더로 복사
         for page in all_pages:
@@ -1242,6 +1524,15 @@ class PromptBook(QMainWindow):
         if item:
             self.book_list.setCurrentItem(item)
             self.on_book_selected(self.book_list.row(item))
+            
+            # 불러온 북의 페이지들을 현재 정렬 모드에 맞게 정렬
+            if hasattr(self, 'sort_selector') and not self.sort_mode_custom:
+                current_sort_mode = self.sort_selector.currentText()
+                print(f"[DEBUG] 불러온 북에 정렬 적용: {current_sort_mode}")
+                from promptbook_features import sort_characters
+                self.state.characters = sort_characters(self.state.characters, current_sort_mode)
+                self.state.books[self.current_book]["pages"] = self.state.characters
+                self.refresh_character_list()
         
         # 데이터 저장
         self.save_to_file()
@@ -1291,106 +1582,7 @@ class PromptBook(QMainWindow):
                 
         self.save_to_file()
 
-    def export_character_list(self):
-        from zipfile import ZipFile
-        import tempfile
 
-        path, _ = QFileDialog.getSaveFileName(self, "리스트 저장", "character_list.zip", "Zip Files (*.zip)")
-        if path:
-            try:
-                with ZipFile(path, 'w') as zipf:
-                    for book_name, book_data in self.state.books.items():
-                        characters = book_data.get("pages", [])
-                        export_data = []
-                        for i, char in enumerate(characters):
-                            char_copy = dict(char)
-                            img_path = char.get("image_path")
-                            if img_path and os.path.exists(img_path):
-                                filename = f"images/{book_name}_{i}_{os.path.basename(img_path)}"
-                                zipf.write(img_path, filename)
-                                char_copy["image_path"] = filename
-                            export_data.append(char_copy)
-                        zipf.writestr(f"{book_name}.json", json.dumps(export_data, ensure_ascii=False, indent=2))
-            except Exception as e:
-                print(f"리스트 저장 실패: {e}")
-
-    def import_character_list(self):
-        if not self.current_book or self.current_book not in self.state.books:
-            QMessageBox.warning(self, "불러오기 실패", "먼저 북을 선택해 주세요.")
-            return
-            
-        path, _ = QFileDialog.getOpenFileName(self, "리스트 불러오기", "", "Zip Files (*.zip)")
-        if path:
-            try:
-                from zipfile import ZipFile
-                import tempfile
-                
-                temp_dir = tempfile.mkdtemp()
-                with ZipFile(path, 'r') as zipf:
-                    zipf.extractall(temp_dir)
-                    books = {}
-                    for file_name in zipf.namelist():
-                        if file_name.endswith('.json'):
-                            original_name = os.path.splitext(os.path.basename(file_name))[0]
-                            book_name = original_name
-                            existing_names = set(self.state.books.keys())
-                            if book_name in existing_names:
-                                for i in range(1, 1000):
-                                    candidate = f"{original_name} ({i})"
-                                    if candidate not in existing_names:
-                                        book_name = candidate
-                                        break
-                            with open(os.path.join(temp_dir, file_name), 'r', encoding='utf-8') as f:
-                                data = json.load(f)
-                                for char in data:
-                                    rel_path = char.get("image_path")
-                                    if rel_path:
-                                        full_path = os.path.join(temp_dir, rel_path)
-                                        if os.path.exists(full_path):
-                                            os.makedirs("images", exist_ok=True)
-                                            dest_path = os.path.join("images", os.path.basename(full_path))
-                                            shutil.copy(full_path, dest_path)
-                                            char["image_path"] = dest_path
-                                        else:
-                                            char["image_path"] = ""
-                                books[book_name] = {"emoji": "📕", "pages": data}
-                                
-                    if self.current_book and self.current_book in self.state.books:
-                        all_imported_pages = []
-                        for book_data in books.values():
-                            pages = book_data.get("pages", [])
-                            if isinstance(pages, list):  # 리스트 형식 확인
-                                for char in pages:
-                                    if isinstance(char, dict):  # 딕셔너리 형식 확인
-                                        name = char.get("name", "")
-                                        existing_names = {c.get("name", "") for c in self.state.books[self.current_book].get("pages", [])}
-                                        if name in existing_names:
-                                            for i in range(1, 1000):
-                                                new_name = f"{name} ({i})"
-                                                if new_name not in existing_names:
-                                                    char["name"] = new_name
-                                                    break
-                                            existing_names.add(char["name"])
-                                        all_imported_pages.append(char)
-                        
-                        # 현재 정렬 모드 확인 및 적용
-                        current_mode = self.sort_selector.currentText() if hasattr(self, "sort_selector") else "오름차순 정렬"
-                        
-                        # 기존 페이지에 새 페이지 추가
-                        self.state.books[self.current_book]["pages"].extend(all_imported_pages)
-                        self.state.characters = self.state.books[self.current_book]["pages"]
-                        
-                        # 커스텀 정렬이 아닌 경우에만 정렬 적용
-                        if not self.sort_mode_custom:
-                            from promptbook_features import sort_characters
-                            self.state.characters = sort_characters(self.state.characters, current_mode)
-                        
-                        self.refresh_character_list()
-                        self.save_to_file()
-                        
-            except Exception as e:
-                print(f"리스트 불러오기 실패: {e}")
-                QMessageBox.warning(self, "오류", f"리스트 불러오기 중 오류가 발생했습니다:\n{str(e)}")
 
     def show_character_context_menu(self, position):
         item = self.char_list.itemAt(position)
@@ -1551,7 +1743,7 @@ class PromptBook(QMainWindow):
             self.state.characters[self.current_index]["image_path"] = ""
             self.state.books[self.current_book]["pages"] = self.state.characters
             self.image_scene.clear()
-            self.image_view.drop_hint.setVisible(True)
+            self.image_view.update_drop_hint_visibility()
             self.save_to_file()
 
     def rename_book(self, item):
