@@ -267,9 +267,9 @@ class ClickableLabel(QLabel):
         super().mousePressEvent(event)
 
 class PageItemWidget(QWidget):
-    def __init__(self, name, is_favorite=False, emoji="📄", parent=None):
+    def __init__(self, name, is_favorite=False, emoji="📄", is_locked=False, parent=None):
         super().__init__(parent)
-        self.page_name = name  # 페이지 이름 저장
+        self.page_name = name
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)  # 여백 줄이기
@@ -290,15 +290,26 @@ class PageItemWidget(QWidget):
         # 페이지 이름 라벨
         self.name_label = QLabel(name)
         
+        # 잠금 상태 라벨
+        self.lock_label = QLabel()
+        self.lock_label.setFixedWidth(16)  # 폭 줄이기
+        self.lock_label.setAlignment(Qt.AlignCenter)
+        
         # 레이아웃에 추가
         layout.addWidget(self.star_label)
         layout.addWidget(self.page_label)
         layout.addWidget(self.name_label)
         layout.addStretch()  # 오른쪽 여백
+        layout.addWidget(self.lock_label)
         
-        # 즐겨찾기 상태 설정
+        # 초기 상태 설정
         self.set_favorite(is_favorite)
+        self.set_locked(is_locked)
     
+    def set_locked(self, is_locked):
+        """잠금 상태 설정"""
+        self.lock_label.setText("🔒" if is_locked else "")
+
     def toggle_favorite(self):
         """즐겨찾기 토글 - 부모 PromptBook 인스턴스 찾아서 처리"""
         # 부모 위젯 체인을 따라 PromptBook 인스턴스 찾기
@@ -332,9 +343,14 @@ class PageItemWidget(QWidget):
     
     def set_name(self, name):
         self.name_label.setText(name)
+        self.page_name = name
     
     def set_emoji(self, emoji):
         self.page_label.setText(emoji)
+        
+    def set_locked(self, is_locked):
+        """잠금 상태 설정"""
+        self.lock_label.setText("🔒" if is_locked else "")
 
 class BookItemWidget(QWidget):
     def __init__(self, name, is_favorite=False, emoji="📕", parent=None):
@@ -654,7 +670,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.0.0.3"
+    VERSION = "v2.0.0.4"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -1275,15 +1291,15 @@ class PromptBook(QMainWindow):
                 text = char.get("name", "(이름 없음)")
                 is_favorite = char.get("favorite", False)
                 emoji = char.get("emoji", "📄")
+                is_locked = char.get("locked", False)  # 잠금 상태 가져오기
                 
                 # 커스텀 위젯 생성
-                widget = PageItemWidget(text, is_favorite, emoji)
+                widget = PageItemWidget(text, is_favorite, emoji, is_locked)  # is_locked 전달
                 item.setData(Qt.UserRole, text)
                 
                 self.char_list.addItem(item)
                 self.char_list.setItemWidget(item, widget)
                 item.setSizeHint(widget.sizeHint())
-            item.setData(Qt.UserRole, i)
         self.char_list.blockSignals(False)
 
     def filter_books(self):
@@ -1413,9 +1429,11 @@ class PromptBook(QMainWindow):
                 self.lock_checkbox.setText("🔒 페이지 잠금")
             else:
                 self.lock_checkbox.setText("🔓 페이지 잠금")
-            
-            self.update_all_buttons_state()
-            self.save_current_character()
+                
+            # 리스트 갱신
+            current_name = self.state.characters[self.current_index].get('name')
+            self.refresh_character_list(selected_name=current_name)
+            self.save_to_file()
 
     def save_ui_settings(self):
         settings = {
@@ -1534,6 +1552,7 @@ class PromptBook(QMainWindow):
             self.delete_button.setEnabled(page_enabled)
 
     def refresh_character_list(self, selected_name=None, should_save=True):
+        """캐릭터 리스트를 갱신합니다."""
         print("[DEBUG] refresh_character_list 시작")
         print(f"[DEBUG] 선택된 이름: {selected_name}")
         
@@ -1568,9 +1587,10 @@ class PromptBook(QMainWindow):
                 text = char.get("name", "(이름 없음)")
                 is_favorite = char.get("favorite", False)
                 emoji = char.get("emoji", "📄")
+                is_locked = char.get("locked", False)  # 잠금 상태 가져오기
                 
                 # 커스텀 위젯 생성
-                widget = PageItemWidget(text, is_favorite, emoji)
+                widget = PageItemWidget(text, is_favorite, emoji, is_locked)  # is_locked 전달
                 item.setData(Qt.UserRole, text)
                 
                 self.char_list.addItem(item)
@@ -2494,39 +2514,69 @@ class PromptBook(QMainWindow):
             self.save_to_file()
 
     def delete_book(self, item):
-        name = item.data(Qt.UserRole)
+        """북 삭제"""
+        # 북 이름 가져오기
+        if isinstance(item, BookItemWidget):
+            book_name = item.book_name
+        else:
+            widget = self.book_list.itemWidget(item)
+            if isinstance(widget, BookItemWidget):
+                book_name = widget.book_name
+            else:
+                return
+        
+        if not book_name or book_name not in self.state.books:
+            return
+        
+        # 잠긴 페이지가 있는지 확인
+        pages = self.state.books[book_name]["pages"]
+        for page in pages:
+            if page.get('locked', False):
+                QMessageBox.warning(
+                    self,
+                    '북 삭제 불가',
+                    f'잠긴 페이지가 있어 삭제할 수 없습니다.',
+                    QMessageBox.Ok
+                )
+                return
+        
+        # 삭제 전 확인
         reply = QMessageBox.question(
-            self, 
-            "북 삭제 확인",
-            f"'{name}' 북을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.",
+            self,
+            '북 삭제',
+            f'"{book_name}" 북을 삭제하시겠습니까?',
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
         
         if reply == QMessageBox.Yes:
-            # 현재 선택된 북이 삭제되는 경우 처리
-            if self.current_book == name:
-                self.current_book = None
-                self.state.characters = []
-                self.char_list.clear()
-                self.name_input.clear()
-                self.tag_input.clear()
-                self.desc_input.clear()
-                self.prompt_input.clear()
-                self.image_scene.clear()
-            # 북 삭제
-            del self.state.books[name]
-            row = self.book_list.row(item)
-            self.book_list.takeItem(row)
-            
-            # UI 상태 업데이트
-            self.update_all_buttons_state()
-            self.save_to_file()
-            
-            # 다른 북이 있다면 첫 번째 북 선택
-            if self.book_list.count() > 0:
-                self.book_list.setCurrentRow(0)
-                self.on_book_selected(0)
+            try:
+                # 현재 선택된 북이 삭제하려는 북인지 확인
+                current_book = None
+                if self.book_list.currentItem():
+                    widget = self.book_list.itemWidget(self.book_list.currentItem())
+                    if isinstance(widget, BookItemWidget):
+                        current_book = widget.book_name
+                
+                # 북 삭제
+                del self.state.books[book_name]
+                row = self.book_list.row(item)
+                self.book_list.takeItem(row)
+                
+                # 삭제된 북이 현재 선택된 북이었다면 UI 초기화
+                if current_book == book_name:
+                    self.character_list.clear()
+                    self.clear_page_list()
+                    self.current_book = None
+                    self.state.characters = []
+                
+                # 변경사항 저장
+                self.save_to_file()
+                self.refresh_book_list()
+                
+            except Exception as e:
+                print(f"[ERROR] 북 삭제 중 오류 발생: {str(e)}")
+                QMessageBox.warning(self, '오류', f'북 삭제 중 오류가 발생했습니다.', QMessageBox.Ok)
 
     def update_image_buttons_state(self):
         # 이미지 불러오기 버튼: 북과 페이지가 선택되어 있을 때 활성화

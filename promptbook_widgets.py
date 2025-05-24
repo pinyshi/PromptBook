@@ -1,7 +1,7 @@
-
-from PySide6.QtWidgets import QPlainTextEdit, QGraphicsView, QCompleter, QApplication
+from PySide6.QtWidgets import QPlainTextEdit, QGraphicsView, QCompleter, QApplication, QWidget, QHBoxLayout, QLabel
 from PySide6.QtGui import QKeyEvent, QPainter, QDragEnterEvent, QDropEvent
 from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtCore import Signal
 
 class CustomLineEdit(QPlainTextEdit):
     def __init__(self, completer=None):
@@ -98,3 +98,94 @@ class ImageView(QGraphicsView):
                     parent.update_image_buttons_state()
                     parent.update_image_view(file_path)
                     break
+
+class PageItemWidget(QWidget):
+    def __init__(self, name, is_favorite=False, emoji="📄", is_locked=False, parent=None):
+        super().__init__(parent)
+        self.page_name = name
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)  # 여백 줄이기
+        layout.setSpacing(2)  # 간격 대폭 줄이기
+        
+        # 별 표시 라벨 (클릭 가능)
+        self.star_label = ClickableLabel()
+        self.star_label.setFixedWidth(16)  # 폭 줄이기
+        self.star_label.setAlignment(Qt.AlignCenter)
+        self.star_label.setCursor(Qt.PointingHandCursor)  # 마우스 커서 변경
+        self.star_label.setToolTip("클릭하여 즐겨찾기 토글")
+        self.star_label.clicked.connect(self.toggle_favorite)
+        
+        # 페이지 아이콘 라벨
+        self.page_label = QLabel(emoji)
+        self.page_label.setFixedWidth(16)  # 폭 줄이기
+        
+        # 페이지 이름 라벨
+        self.name_label = QLabel(name)
+        
+        # 잠금 상태 라벨
+        self.lock_label = QLabel()
+        self.lock_label.setFixedWidth(16)  # 폭 줄이기
+        self.lock_label.setAlignment(Qt.AlignCenter)
+        
+        # 레이아웃에 추가
+        layout.addWidget(self.star_label)
+        layout.addWidget(self.page_label)
+        layout.addWidget(self.name_label)
+        layout.addStretch()  # 오른쪽 여백
+        layout.addWidget(self.lock_label)
+        
+        # 초기 상태 설정
+        self.set_favorite(is_favorite)
+        self.set_locked(is_locked)
+    
+    def toggle_favorite(self):
+        """즐겨찾기 토글 - 부모 PromptBook 인스턴스 찾아서 처리"""
+        # 부모 위젯 체인을 따라 PromptBook 인스턴스 찾기
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, PromptBook):
+                # 현재 페이지에 대해 즐겨찾기 토글
+                for char in parent.state.characters:
+                    if char.get("name") == self.page_name:
+                        is_favorite = not char.get("favorite", False)
+                        char["favorite"] = is_favorite
+                        
+                        # 상태 업데이트
+                        if parent.current_book:
+                            parent.state.books[parent.current_book]["pages"] = parent.state.characters
+                        
+                        # 정렬 적용 및 리스트 갱신
+                        if not parent.sort_mode_custom:
+                            current_mode = parent.sort_selector.currentText() if hasattr(parent, "sort_selector") else "오름차순 정렬"
+                            from promptbook_features import sort_characters
+                            parent.state.characters = sort_characters(parent.state.characters, current_mode)
+                        
+                        parent.refresh_character_list(selected_name=self.page_name)
+                        parent.save_to_file()
+                        return
+                break
+            parent = parent.parent()
+    
+    def set_favorite(self, is_favorite):
+        self.star_label.setText("❤️" if is_favorite else "🖤")
+    
+    def set_name(self, name):
+        self.name_label.setText(name)
+        self.page_name = name
+    
+    def set_emoji(self, emoji):
+        self.page_label.setText(emoji)
+        
+    def set_locked(self, is_locked):
+        """잠금 상태 설정"""
+        self.lock_label.setText("🔒" if is_locked else "")
+
+class ClickableLabel(QLabel):
+    """클릭 가능한 라벨 위젯"""
+    clicked = Signal()
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
