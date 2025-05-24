@@ -209,21 +209,7 @@ class ImageView(QGraphicsView):
         file_ext = os.path.splitext(file_path)[1].lower()
         return file_ext in image_extensions
 
-class BookNameDelegate(QStyledItemDelegate):
-    def createEditor(self, parent, option, index):
-        return QLineEdit(parent)
 
-    def setEditorData(self, editor, index):
-        text = index.model().data(index, Qt.DisplayRole)
-        editor.setText(PromptBookUtils.extract_book_name(text))
-
-    def setModelData(self, editor, model, index):
-        name = editor.text().strip()
-        emoji = "📕"  # 기본 이모지
-        if hasattr(self.parent(), "state") and name in self.parent().state.books:
-            emoji = self.parent().state.books[name].get("emoji", "📕")
-        model.setData(index, f"{emoji} {name}", Qt.DisplayRole)
-        model.setData(index, name, Qt.UserRole)
 
 class ClickableLabel(QLabel):
     """클릭 가능한 라벨"""
@@ -235,7 +221,7 @@ class ClickableLabel(QLabel):
         super().mousePressEvent(event)
 
 class PageItemWidget(QWidget):
-    def __init__(self, name, is_favorite=False, parent=None):
+    def __init__(self, name, is_favorite=False, emoji="📄", parent=None):
         super().__init__(parent)
         self.page_name = name  # 페이지 이름 저장
         
@@ -252,7 +238,7 @@ class PageItemWidget(QWidget):
         self.star_label.clicked.connect(self.toggle_favorite)
         
         # 페이지 아이콘 라벨
-        self.page_label = QLabel("📄")
+        self.page_label = QLabel(emoji)
         self.page_label.setFixedWidth(16)  # 폭 줄이기
         
         # 페이지 이름 라벨
@@ -300,6 +286,95 @@ class PageItemWidget(QWidget):
     
     def set_name(self, name):
         self.name_label.setText(name)
+    
+    def set_emoji(self, emoji):
+        self.page_label.setText(emoji)
+
+class BookItemWidget(QWidget):
+    def __init__(self, name, is_favorite=False, emoji="📕", parent=None):
+        super().__init__(parent)
+        self.book_name = name  # 북 이름 저장
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)  # 여백 줄이기
+        layout.setSpacing(2)  # 간격 대폭 줄이기
+        
+        # 별 표시 라벨 (클릭 가능)
+        self.star_label = ClickableLabel()
+        self.star_label.setFixedWidth(16)  # 폭 줄이기
+        self.star_label.setAlignment(Qt.AlignCenter)
+        self.star_label.setCursor(Qt.PointingHandCursor)  # 마우스 커서 변경
+        self.star_label.setToolTip("클릭하여 즐겨찾기 토글")
+        self.star_label.clicked.connect(self.toggle_favorite)
+        
+        # 북 아이콘 라벨
+        self.book_label = QLabel(emoji)
+        self.book_label.setFixedWidth(16)  # 폭 줄이기
+        
+        # 북 이름 라벨
+        self.name_label = QLabel(name)
+        
+        # 레이아웃에 추가
+        layout.addWidget(self.star_label)
+        layout.addWidget(self.book_label)
+        layout.addWidget(self.name_label)
+        layout.addStretch()  # 오른쪽 여백
+        
+        # 즐겨찾기 상태 설정
+        self.set_favorite(is_favorite)
+    
+    def toggle_favorite(self):
+        """즐겨찾기 토글 - 부모 PromptBook 인스턴스 찾아서 처리"""
+        # 부모 위젯 체인을 따라 PromptBook 인스턴스 찾기
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, PromptBook):
+                # 현재 북에 대해 즐겨찾기 토글
+                if self.book_name in parent.state.books:
+                    is_favorite = not parent.state.books[self.book_name].get("favorite", False)
+                    parent.state.books[self.book_name]["favorite"] = is_favorite
+                    
+                    # 정렬 적용 및 리스트 갱신
+                    if not parent.book_sort_custom:
+                        current_mode = parent.book_sort_selector.currentText() if hasattr(parent, "book_sort_selector") else "오름차순 정렬"
+                        parent.handle_book_sort()
+                    else:
+                        # 현재 위젯만 업데이트
+                        self.set_favorite(is_favorite)
+                    
+                    parent.save_to_file()
+                    return
+                break
+            parent = parent.parent()
+    
+    def set_favorite(self, is_favorite):
+        self.star_label.setText("⭐" if is_favorite else "")
+    
+    def set_name(self, name):
+        self.name_label.setText(name)
+        self.book_name = name
+    
+    def set_emoji(self, emoji):
+        self.book_label.setText(emoji)
+
+class BookList(QListWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(False)  # 외부 드롭 비활성화
+        
+    def dragEnterEvent(self, event):
+        # 내부 항목 이동인 경우만 허용
+        if event.source() == self:
+            event.accept()
+        else:
+            event.ignore()
+            
+    def dropEvent(self, event):
+        # 내부 항목 이동인 경우만 처리
+        if event.source() == self:
+            super().dropEvent(event)
+        else:
+            event.ignore()
 
 class CharacterList(QListWidget):
     def __init__(self, parent=None):
@@ -327,6 +402,15 @@ class PromptBook(QMainWindow):
     
     emoji_options = [
         "📕", "📘", "📙", "📗", "📓", "📔", "📒", "📚", "📖", "📝",
+        "🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀",
+        "👑", "🎵", "🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😀", "😎",
+        "🥳", "😈", "🤖", "👽", "👾", "🙈", "😺", "🫠", "👧", "👩",
+        "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"
+    ]
+    
+    # 페이지용 이모지 옵션 (북 관련 이모지 제외)
+    page_emoji_options = [
+        "📄", "📃", "🗒️", "📑", "🧾", "📰", "🗞️", "📋", "📌", "📎",
         "🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀",
         "👑", "🎵", "🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😀", "😎",
         "🥳", "😈", "🤖", "👽", "👾", "🙈", "😺", "🫠", "👧", "👩",
@@ -443,13 +527,16 @@ class PromptBook(QMainWindow):
         self.main_splitter.addWidget(right_widget)
 
     def setup_book_list(self):
-        self.book_list = QListWidget()
+        # 북 검색 입력란 추가
+        self.book_search_input = QLineEdit()
+        self.book_search_input.setPlaceholderText("북 이름으로 검색...")
+        self.book_search_input.textChanged.connect(self.filter_books)
+        
+        self.book_list = BookList()  # BookList 사용
         self.book_list.setSelectionMode(QListWidget.SingleSelection)
         self.book_list.setFocusPolicy(Qt.StrongFocus)
-        self.book_list.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        # 델리게이트 제거 - 커스텀 위젯 사용할 예정
         self.book_list.installEventFilter(self)
-        self.book_list.setItemDelegate(BookNameDelegate(self))
-        self.book_list.itemChanged.connect(self.rename_book)
         self.book_list.itemClicked.connect(lambda item: self.on_book_selected(self.book_list.row(item)))
         self.book_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.book_list.customContextMenuRequested.connect(self.show_book_context_menu)
@@ -460,18 +547,19 @@ class PromptBook(QMainWindow):
         self.book_sort_selector.currentIndexChanged.connect(self.handle_book_sort)
         
         self.left_layout.addWidget(QLabel("북 리스트"))
+        self.left_layout.addWidget(self.book_search_input)
         self.left_layout.addWidget(self.book_sort_selector)
         self.left_layout.addWidget(self.book_list)
         
-        self.book_add_button = QPushButton("📚 북 추가")
+        self.book_add_button = QPushButton("➕ 북 추가")
         self.book_add_button.clicked.connect(self.add_book)
         self.left_layout.addWidget(self.book_add_button)
 
     def setup_character_list(self):
+        # 페이지 검색 입력란 추가
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("이름 또는 태그로 검색...")
         self.search_input.textChanged.connect(self.filter_characters)
-        self.left_layout.addWidget(self.search_input)
         
         self.char_list = CharacterList()  # QListWidget 대신 CharacterList 사용
         # 기본적으로 드래그 앤 드롭 비활성화
@@ -482,11 +570,13 @@ class PromptBook(QMainWindow):
         self.char_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.char_list.customContextMenuRequested.connect(self.show_character_context_menu)
         
+        # 페이지 정렬 선택기 추가
         self.sort_selector = QComboBox()
         self.sort_selector.addItems(["오름차순 정렬", "내림차순 정렬", "커스텀 정렬"])
         self.sort_selector.currentIndexChanged.connect(self.handle_character_sort)
         
         self.left_layout.addWidget(QLabel("페이지 리스트"))
+        self.left_layout.addWidget(self.search_input)
         self.left_layout.addWidget(self.sort_selector)
         self.left_layout.addWidget(self.char_list)
         
@@ -519,8 +609,20 @@ class PromptBook(QMainWindow):
             completer = QCompleter(default_prompts)
             self.prompt_input.set_custom_completer(completer)
         
+        # 페이지 잠금 체크박스
+        self.lock_checkbox = QCheckBox("🔓 페이지 잠금")
+        self.lock_checkbox.setToolTip("잠금된 페이지는 삭제할 수 없습니다")
+        self.lock_checkbox.setEnabled(False)
+        self.lock_checkbox.stateChanged.connect(self.on_lock_changed)
+        
         self.middle_layout.addWidget(QLabel("이름"))
-        self.middle_layout.addWidget(self.name_input)
+        
+        # 이름 입력란과 잠금 체크박스를 한 줄에 배치
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(self.name_input)
+        name_layout.addWidget(self.lock_checkbox)
+        self.middle_layout.addLayout(name_layout)
+        
         self.middle_layout.addWidget(QLabel("태그"))
         self.middle_layout.addWidget(self.tag_input)
         self.middle_layout.addWidget(QLabel("설명"))
@@ -738,9 +840,10 @@ class PromptBook(QMainWindow):
                 item = QListWidgetItem()
                 text = char.get("name", "(이름 없음)")
                 is_favorite = char.get("favorite", False)
+                emoji = char.get("emoji", "📄")
                 
                 # 커스텀 위젯 생성
-                widget = PageItemWidget(text, is_favorite)
+                widget = PageItemWidget(text, is_favorite, emoji)
                 item.setData(Qt.UserRole, text)
                 
                 self.char_list.addItem(item)
@@ -748,6 +851,44 @@ class PromptBook(QMainWindow):
                 item.setSizeHint(widget.sizeHint())
             item.setData(Qt.UserRole, i)
         self.char_list.blockSignals(False)
+
+    def filter_books(self):
+        """북 검색 필터링"""
+        self.refresh_book_list()
+
+    def refresh_book_list(self, selected_name=None):
+        """북 리스트 갱신"""
+        # 검색어가 있으면 필터링, 없으면 전체 표시
+        query = self.book_search_input.text().strip().lower() if hasattr(self, "book_search_input") else ""
+        
+        self.book_list.blockSignals(True)
+        self.book_list.clear()
+        
+        for name, data in self.state.books.items():
+            if isinstance(data, dict):  # 딕셔너리 형식 확인
+                book_name_lower = name.lower()
+                if not query or query in book_name_lower:
+                    emoji = data.get("emoji", "📕")
+                    is_favorite = data.get("favorite", False)
+                    item = QListWidgetItem()
+                    
+                    # 커스텀 위젯 생성
+                    widget = BookItemWidget(name, is_favorite, emoji)
+                    item.setData(Qt.UserRole, name)
+                    
+                    self.book_list.addItem(item)
+                    self.book_list.setItemWidget(item, widget)
+                    item.setSizeHint(widget.sizeHint())
+        
+        # 선택 상태 복원
+        if selected_name:
+            for i in range(self.book_list.count()):
+                item = self.book_list.item(i)
+                if item.data(Qt.UserRole) == selected_name:
+                    self.book_list.setCurrentItem(item)
+                    break
+        
+        self.book_list.blockSignals(False)
 
     def save_current_character(self):
         if self.current_book and 0 <= self.current_index < len(self.state.characters):
@@ -765,6 +906,7 @@ class PromptBook(QMainWindow):
                 if isinstance(widget, PageItemWidget):
                     widget.set_name(data["name"])
                     widget.set_favorite(data.get("favorite", False))
+                    widget.set_emoji(data.get("emoji", "📄"))
             
             self.save_to_file()
 
@@ -792,6 +934,17 @@ class PromptBook(QMainWindow):
                     self.desc_input.setPlainText(char.get("desc", ""))
                     self.prompt_input.setPlainText(char.get("prompt", ""))
                     
+                    # 잠금 상태 표시
+                    is_locked = char.get('locked', False)
+                    self.lock_checkbox.setChecked(is_locked)
+                    self.lock_checkbox.setEnabled(True)
+                    
+                    # 체크박스 텍스트 업데이트
+                    if is_locked:
+                        self.lock_checkbox.setText("🔒 페이지 잠금")
+                    else:
+                        self.lock_checkbox.setText("🔓 페이지 잠금")
+                    
                     # 이미지 업데이트
                     if "image_path" in char and os.path.exists(char["image_path"]):
                         self.update_image_view(char["image_path"])
@@ -806,10 +959,28 @@ class PromptBook(QMainWindow):
             self.tag_input.clear()
             self.desc_input.clear()
             self.prompt_input.clear()
+            self.lock_checkbox.setChecked(False)
+            self.lock_checkbox.setText("🔓 페이지 잠금")
+            self.lock_checkbox.setEnabled(False)
             self.image_scene.clear()
             self.image_view.update_drop_hint_visibility()
             
         self.update_all_buttons_state()
+    
+    def on_lock_changed(self):
+        """잠금 상태가 변경되었을 때 실행되는 함수"""
+        if self.current_index >= 0 and self.current_index < len(self.state.characters):
+            is_locked = self.lock_checkbox.isChecked()
+            self.state.characters[self.current_index]['locked'] = is_locked
+            
+            # 체크박스 텍스트 업데이트
+            if is_locked:
+                self.lock_checkbox.setText("🔒 페이지 잠금")
+            else:
+                self.lock_checkbox.setText("🔓 페이지 잠금")
+            
+            self.update_all_buttons_state()
+            self.save_current_character()
 
     def save_ui_settings(self):
         settings = {
@@ -897,9 +1068,15 @@ class PromptBook(QMainWindow):
         self.save_button.setEnabled(page_enabled)
         self.copy_button.setEnabled(page_enabled)
         self.duplicate_button.setEnabled(page_enabled)
-        self.delete_button.setEnabled(page_enabled)
         self.image_load_btn.setEnabled(page_enabled)
         self.image_remove_btn.setEnabled(page_enabled)
+        
+        # 잠금 상태에 따른 삭제 버튼 비활성화
+        if page_enabled and self.current_index >= 0 and self.current_index < len(self.state.characters):
+            is_locked = self.state.characters[self.current_index].get('locked', False)
+            self.delete_button.setEnabled(not is_locked)
+        else:
+            self.delete_button.setEnabled(page_enabled)
 
     def refresh_character_list(self, selected_name=None, should_save=True):
         print("[DEBUG] refresh_character_list 시작")
@@ -935,9 +1112,10 @@ class PromptBook(QMainWindow):
                 item = QListWidgetItem()
                 text = char.get("name", "(이름 없음)")
                 is_favorite = char.get("favorite", False)
+                emoji = char.get("emoji", "📄")
                 
                 # 커스텀 위젯 생성
-                widget = PageItemWidget(text, is_favorite)
+                widget = PageItemWidget(text, is_favorite, emoji)
                 item.setData(Qt.UserRole, text)
                 
                 self.char_list.addItem(item)
@@ -973,7 +1151,8 @@ class PromptBook(QMainWindow):
     def on_book_selected(self, index):
         self.sort_mode_custom = False
         if 0 <= index < self.book_list.count():
-            book_name = self.extract_book_name(self.book_list.item(index).text())
+            item = self.book_list.item(index)
+            book_name = item.data(Qt.UserRole) if item else None
             self.current_book = book_name
             book_data = self.state.books.get(book_name, {})
             self.state.characters = book_data.get("pages", [])
@@ -1028,14 +1207,8 @@ class PromptBook(QMainWindow):
             try:
                 with open(self.SAVE_FILE, 'r', encoding='utf-8') as f:
                     self.state.books = json.load(f)
-                self.book_list.clear()
-                for name, data in self.state.books.items():
-                    if isinstance(data, dict):  # 딕셔너리 형식 확인
-                        emoji = data.get("emoji", "📕")
-                        item = QListWidgetItem(f"{emoji} {name}")
-                        item.setFlags(item.flags() | Qt.ItemIsEditable)
-                        item.setData(Qt.UserRole, name)
-                        self.book_list.addItem(item)
+                # 북 리스트 갱신
+                self.refresh_book_list()
 
                 self.current_book = None
                 self.state.characters = []
@@ -1190,8 +1363,11 @@ class PromptBook(QMainWindow):
     def add_book(self):
         print("[DEBUG] add_book 메서드 호출됨")  # 디버그 추가
         base_name = "새 북"
-        existing_names = {self.extract_book_name(self.book_list.item(i).text()) 
-                        for i in range(self.book_list.count())}
+        existing_names = set()
+        for i in range(self.book_list.count()):
+            item = self.book_list.item(i)
+            if item:
+                existing_names.add(item.data(Qt.UserRole))
         
         # 고유한 이름 생성
         if base_name not in existing_names:
@@ -1213,10 +1389,15 @@ class PromptBook(QMainWindow):
         print(f"[DEBUG] 새 북 데이터 생성 완료, 현재 북 수: {len(self.state.books)}")  # 디버그 추가
         
         # 리스트에 아이템 추가
-        item = QListWidgetItem(f"📕 {unique_name}")
+        item = QListWidgetItem()
+        
+        # 커스텀 위젯 생성
+        widget = BookItemWidget(unique_name, False, "📕")
         item.setData(Qt.UserRole, unique_name)
-        item.setFlags(item.flags() | Qt.ItemIsEditable)
+        
         self.book_list.addItem(item)
+        self.book_list.setItemWidget(item, widget)
+        item.setSizeHint(widget.sizeHint())
         print(f"[DEBUG] 북 리스트에 아이템 추가 완료")  # 디버그 추가
         
         # 현재 정렬 모드가 커스텀이 아니면 정렬 적용
@@ -1505,10 +1686,16 @@ class PromptBook(QMainWindow):
     def _add_book_to_ui(self, book_name, emoji):
         """북을 UI에 추가하는 공통 메서드"""
         # 북 리스트 UI 업데이트
-        item = QListWidgetItem(f"{emoji} {book_name}")
+        item = QListWidgetItem()
+        
+        # 커스텀 위젯 생성
+        is_favorite = self.state.books[book_name].get("favorite", False)
+        widget = BookItemWidget(book_name, is_favorite, emoji)
         item.setData(Qt.UserRole, book_name)
-        item.setFlags(item.flags() | Qt.ItemIsEditable)
+        
         self.book_list.addItem(item)
+        self.book_list.setItemWidget(item, widget)
+        item.setSizeHint(widget.sizeHint())
         
         # 북 정렬 적용
         if hasattr(self, 'book_sort_selector') and not self.book_sort_custom:
@@ -1557,7 +1744,8 @@ class PromptBook(QMainWindow):
             "name": unique_name,
             "tags": "",
             "desc": "",
-            "prompt": ""
+            "prompt": "",
+            "emoji": "📄"
         }
 
         self.state.characters.append(new_data)
@@ -1590,6 +1778,24 @@ class PromptBook(QMainWindow):
             return
             
         menu = QMenu()
+        # 메뉴 여백 최적화
+        menu.setStyleSheet("""
+            QMenu {
+                padding: 2px;
+            }
+            QMenu::item {
+                padding: 4px 16px 4px 4px;
+                margin: 0px;
+            }
+            QMenu::item:selected {
+                background-color: #505050;
+                color: white;
+            }
+            QMenu::item:hover {
+                background-color: #505050;
+                color: white;
+            }
+        """)
         name = item.data(Qt.UserRole)
         is_favorite = False
         
@@ -1601,9 +1807,66 @@ class PromptBook(QMainWindow):
         
         # 즐겨찾기 액션 추가
         if is_favorite:
-            favorite_action = menu.addAction("즐겨찾기 해제")
+            favorite_action = menu.addAction("❌ 즐겨찾기 해제")
         else:
             favorite_action = menu.addAction("⭐ 즐겨찾기")
+        
+        # 구분선 추가
+        menu.addSeparator()
+        
+        # 이모지 변경 서브메뉴
+        emoji_menu = QMenu("🔄 이모지 변경")
+        emoji_menu.setStyleSheet("""
+            QMenu {
+                padding: 2px;
+            }
+            QMenu::item {
+                padding: 4px 16px 4px 4px;
+                margin: 0px;
+            }
+            QMenu::item:selected {
+                background-color: #505050;
+                color: white;
+            }
+            QMenu::item:hover {
+                background-color: #505050;
+                color: white;
+            }
+        """)
+        menu.addMenu(emoji_menu)
+        
+        # 페이지용 이모지 옵션 그룹화
+        page_emoji_groups = {
+            "페이지": ["📄", "📃", "🗒️", "📑", "🧾", "📰", "🗞️", "📋", "📌", "📎"],
+            "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
+            "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
+            "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
+            "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
+        }
+        
+        for group_name, emojis in page_emoji_groups.items():
+            group_menu = QMenu(group_name)
+            group_menu.setStyleSheet("""
+                QMenu {
+                    padding: 2px;
+                }
+                QMenu::item {
+                    padding: 4px 16px 4px 4px;
+                    margin: 0px;
+                }
+                QMenu::item:selected {
+                    background-color: #505050;
+                    color: white;
+                }
+                QMenu::item:hover {
+                    background-color: #505050;
+                    color: white;
+                }
+            """)
+            emoji_menu.addMenu(group_menu)
+            for emoji in emojis:
+                action = group_menu.addAction(emoji)
+                action.triggered.connect(lambda checked, e=emoji, i=item: self.set_page_emoji(i, e))
         
         # 구분선 추가
         menu.addSeparator()
@@ -1620,6 +1883,25 @@ class PromptBook(QMainWindow):
             self.duplicate_selected_character()
         elif action == delete_action:
             self.delete_selected_character()
+    
+    def set_page_emoji(self, item, emoji):
+        """페이지 이모지를 변경합니다."""
+        name = item.data(Qt.UserRole)
+        
+        # 해당 페이지 찾아서 이모지 업데이트
+        for i, char in enumerate(self.state.characters):
+            if char.get("name") == name:
+                char["emoji"] = emoji
+                
+                # 리스트 위젯의 아이템 업데이트
+                widget = self.char_list.itemWidget(item)
+                if isinstance(widget, PageItemWidget):
+                    widget.set_emoji(emoji)
+                
+                # 상태 저장
+                self.state.books[self.current_book]["pages"] = self.state.characters
+                self.save_to_file()
+                break
 
     def show_book_context_menu(self, position):
         item = self.book_list.itemAt(position)
@@ -1627,6 +1909,40 @@ class PromptBook(QMainWindow):
             return
             
         menu = QMenu()
+        # 메뉴 여백 최적화
+        menu.setStyleSheet("""
+            QMenu {
+                padding: 2px;
+            }
+            QMenu::item {
+                padding: 4px 16px 4px 4px;
+                margin: 0px;
+            }
+            QMenu::item:selected {
+                background-color: #505050;
+                color: white;
+            }
+            QMenu::item:hover {
+                background-color: #505050;
+                color: white;
+            }
+        """)
+        
+        name = item.data(Qt.UserRole)
+        is_favorite = False
+        
+        # 현재 즐겨찾기 상태 확인
+        if name in self.state.books:
+            is_favorite = self.state.books[name].get("favorite", False)
+        
+        # 즐겨찾기 액션 추가
+        if is_favorite:
+            favorite_action = menu.addAction("❌ 즐겨찾기 해제")
+        else:
+            favorite_action = menu.addAction("⭐ 즐겨찾기")
+        
+        # 구분선 추가
+        menu.addSeparator()
         
         # 기본 메뉴 항목 추가
         rename_action = menu.addAction("📝 이름 변경")
@@ -1635,6 +1951,23 @@ class PromptBook(QMainWindow):
         
         # 이모지 변경 서브메뉴
         emoji_menu = QMenu("🔄 이모지 변경")
+        emoji_menu.setStyleSheet("""
+            QMenu {
+                padding: 2px;
+            }
+            QMenu::item {
+                padding: 4px 16px 4px 4px;
+                margin: 0px;
+            }
+            QMenu::item:selected {
+                background-color: #505050;
+                color: white;
+            }
+            QMenu::item:hover {
+                background-color: #505050;
+                color: white;
+            }
+        """)
         menu.addMenu(emoji_menu)
         
         # 이모지 옵션 그룹화
@@ -1648,6 +1981,23 @@ class PromptBook(QMainWindow):
         
         for group_name, emojis in emoji_groups.items():
             group_menu = QMenu(group_name)
+            group_menu.setStyleSheet("""
+                QMenu {
+                    padding: 2px;
+                }
+                QMenu::item {
+                    padding: 4px 16px 4px 4px;
+                    margin: 0px;
+                }
+                QMenu::item:selected {
+                    background-color: #505050;
+                    color: white;
+                }
+                QMenu::item:hover {
+                    background-color: #505050;
+                    color: white;
+                }
+            """)
             emoji_menu.addMenu(group_menu)
             for emoji in emojis:
                 action = group_menu.addAction(emoji)
@@ -1655,10 +2005,81 @@ class PromptBook(QMainWindow):
         
         # 메뉴 실행 및 액션 처리
         action = menu.exec_(self.book_list.mapToGlobal(position))
-        if action == rename_action:
-            self.book_list.editItem(item)
+        if action == favorite_action:
+            self.toggle_book_favorite(item)
+        elif action == rename_action:
+            self.rename_book_dialog(item)
         elif action == delete_action:
             self.delete_book(item)
+    
+    def set_book_emoji(self, item, emoji):
+        """북 이모지를 변경합니다."""
+        name = item.data(Qt.UserRole)
+        
+        # 해당 북의 이모지 업데이트
+        if name in self.state.books:
+            self.state.books[name]["emoji"] = emoji
+            
+            # 위젯의 이모지 업데이트
+            widget = self.book_list.itemWidget(item)
+            if isinstance(widget, BookItemWidget):
+                widget.set_emoji(emoji)
+            
+            # 상태 저장
+            self.save_to_file()
+
+    def toggle_book_favorite(self, item):
+        """북 즐겨찾기 토글"""
+        name = item.data(Qt.UserRole)
+        
+        if name in self.state.books:
+            is_favorite = not self.state.books[name].get("favorite", False)
+            self.state.books[name]["favorite"] = is_favorite
+            
+            # 위젯 업데이트
+            widget = self.book_list.itemWidget(item)
+            if isinstance(widget, BookItemWidget):
+                widget.set_favorite(is_favorite)
+            
+            # 정렬 적용
+            if not self.book_sort_custom:
+                current_mode = self.book_sort_selector.currentText()
+                self.handle_book_sort()
+            else:
+                # 커스텀 정렬 모드에서는 현재 위젯만 업데이트
+                self.refresh_book_list(selected_name=name)
+            
+            self.save_to_file()
+
+    def rename_book_dialog(self, item):
+        """북 이름 변경 대화상자"""
+        old_name = item.data(Qt.UserRole)
+        new_name, ok = QInputDialog.getText(self, "북 이름 변경", "새 이름:", text=old_name)
+        
+        if ok and new_name.strip():
+            new_name = new_name.strip()
+            
+            # 이름이 변경되지 않은 경우
+            if old_name == new_name:
+                return
+                
+            # 이미 존재하는 이름인 경우
+            if new_name in self.state.books:
+                QMessageBox.warning(self, "이름 변경 실패", "이미 존재하는 북 이름입니다.")
+                return
+                
+            # 북 데이터 이동
+            self.state.books[new_name] = self.state.books.pop(old_name)
+            if self.current_book == old_name:
+                self.current_book = new_name
+            
+            # 위젯 업데이트
+            widget = self.book_list.itemWidget(item)
+            if isinstance(widget, BookItemWidget):
+                widget.set_name(new_name)
+            
+            item.setData(Qt.UserRole, new_name)
+            self.save_to_file()
 
     def delete_book(self, item):
         name = item.data(Qt.UserRole)
@@ -1721,19 +2142,33 @@ class PromptBook(QMainWindow):
             items = []
             for i in range(self.book_list.count()):
                 item = self.book_list.item(i)
-                name = self.extract_book_name(item.text())
-                emoji = item.text().split()[0] if item.text().split() else "📕"
-                items.append((name, emoji, item.data(Qt.UserRole)))
+                widget = self.book_list.itemWidget(item)
+                if isinstance(widget, BookItemWidget):
+                    name = widget.book_name
+                    emoji = widget.book_label.text()
+                    items.append((name, emoji, item.data(Qt.UserRole)))
             
-            # 정렬
-            items.sort(key=lambda x: x[0].lower(), reverse=(mode == "내림차순 정렬"))
+            # 정렬 (즐겨찾기 우선, 그 다음 이름순)
+            def sort_key(item):
+                name = item[0]
+                is_favorite = self.state.books[name].get("favorite", False)
+                return (not is_favorite, name.lower())  # 즐겨찾기가 먼저 오도록
+            
+            items.sort(key=sort_key, reverse=(mode == "내림차순 정렬"))
             
             # 리스트 업데이트
             self.book_list.clear()
             for name, emoji, user_data in items:
-                item = QListWidgetItem(f"{emoji} {name}")
+                item = QListWidgetItem()
+                
+                # 커스텀 위젯 생성
+                is_favorite = self.state.books[name].get("favorite", False)
+                widget = BookItemWidget(name, is_favorite, emoji)
                 item.setData(Qt.UserRole, user_data)
+                
                 self.book_list.addItem(item)
+                self.book_list.setItemWidget(item, widget)
+                item.setSizeHint(widget.sizeHint())
         
         # UI 설정 저장
         self.save_ui_settings()
@@ -1746,42 +2181,7 @@ class PromptBook(QMainWindow):
             self.image_view.update_drop_hint_visibility()
             self.save_to_file()
 
-    def rename_book(self, item):
-        old_name = item.data(Qt.UserRole)
-        new_text = item.text().strip()
-        new_name = self.extract_book_name(new_text)
-        
-        # 이름이 비어있거나 변경되지 않은 경우
-        if not new_name or old_name == new_name:
-            # 원래 이름으로 복원
-            emoji = self.state.books[old_name].get("emoji", "📕")
-            item.setText(f"{emoji} {old_name}")
-            return
-            
-        # 이미 존재하는 이름인 경우
-        if new_name in self.state.books and new_name != old_name:
-            QMessageBox.warning(self, "이름 변경 실패", "이미 존재하는 북 이름입니다.")
-            # 원래 이름으로 복원
-            emoji = self.state.books[old_name].get("emoji", "📕")
-            item.setText(f"{emoji} {old_name}")
-            return
-            
-        if old_name and new_name and old_name != new_name:
-            # 이모지 유지
-            emoji = self.state.books[old_name].get("emoji", "📕")
-            # 북 데이터 이동
-            self.state.books[new_name] = self.state.books.pop(old_name)
-            if self.current_book == old_name:
-                self.current_book = new_name
-            # 새 이름과 이모지로 텍스트 설정
-            item.setText(f"{emoji} {new_name}")
-            item.setData(Qt.UserRole, new_name)
-            self.save_to_file()
 
-    def extract_book_name(self, text):
-        """북 이름에서 이모지를 제외한 실제 이름만 추출합니다."""
-        parts = text.split()
-        return ' '.join(parts[1:]) if len(parts) > 1 else text
 
     def duplicate_selected_character(self):
         if not self.current_book or self.current_index < 0:
@@ -1835,6 +2235,15 @@ class PromptBook(QMainWindow):
 
     def delete_selected_character(self):
         if not self.current_book or self.current_index < 0:
+            return
+            
+        # 잠금 상태 확인
+        if self.state.characters[self.current_index].get('locked', False):
+            QMessageBox.warning(
+                self,
+                "삭제 불가",
+                "잠금된 페이지는 삭제할 수 없습니다.\n잠금을 해제한 후 다시 시도해주세요."
+            )
             return
             
         # 삭제 확인 대화상자
