@@ -1077,90 +1077,174 @@ class PromptBook(QMainWindow):
             with ZipFile(path, 'r') as zipf:
                 zipf.extractall(temp_dir)
                 
-                # book_data.json 파일 읽기
+                # 새 형식 확인: book_data.json 파일
                 json_path = os.path.join(temp_dir, "book_data.json")
-                if not os.path.exists(json_path):
-                    QMessageBox.warning(self, "불러오기 실패", "올바른 북 파일이 아닙니다.")
-                    return
-                    
-                with open(json_path, 'r', encoding='utf-8') as f:
-                    book_data = json.load(f)
-                
-                # 북 이름 중복 체크
-                original_name = book_data.get("book_name", "불러온 북")
-                book_name = original_name
-                existing_names = set(self.state.books.keys())
-                
-                if book_name in existing_names:
-                    for i in range(1, 1000):
-                        candidate = f"{original_name} ({i})"
-                        if candidate not in existing_names:
-                            book_name = candidate
-                            break
-                
-                # 이미지 파일들을 images 폴더로 복사
-                pages = book_data.get("pages", [])
-                for page in pages:
-                    rel_path = page.get("image_path")
-                    if rel_path:
-                        full_path = os.path.join(temp_dir, rel_path)
-                        if os.path.exists(full_path):
-                            # images 폴더 생성
-                            os.makedirs("images", exist_ok=True)
-                            # 고유한 파일명 생성
-                            dest_filename = f"{book_name}_{os.path.basename(full_path)}"
-                            dest_path = os.path.join("images", dest_filename)
-                            
-                            # 파일명 중복 방지
-                            counter = 1
-                            while os.path.exists(dest_path):
-                                name, ext = os.path.splitext(dest_filename)
-                                dest_filename = f"{name}_{counter}{ext}"
-                                dest_path = os.path.join("images", dest_filename)
-                                counter += 1
-                            
-                            shutil.copy(full_path, dest_path)
-                            page["image_path"] = dest_path
-                        else:
-                            page["image_path"] = ""
-                
-                # 새 북을 books에 추가
-                emoji = book_data.get("emoji", "📕")
-                self.state.books[book_name] = {
-                    "emoji": emoji,
-                    "pages": pages
-                }
-                
-                # 북 리스트 UI 업데이트
-                item = QListWidgetItem(f"{emoji} {book_name}")
-                item.setData(Qt.UserRole, book_name)
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
-                self.book_list.addItem(item)
-                
-                # 북 정렬 적용
-                if hasattr(self, 'book_sort_selector') and not self.book_sort_custom:
-                    self.handle_book_sort()
-                    # 정렬 후 새로 생성된 아이템 찾기
-                    for i in range(self.book_list.count()):
-                        book_item = self.book_list.item(i)
-                        if book_item.data(Qt.UserRole) == book_name:
-                            item = book_item
-                            break
-                
-                # 새로 불러온 북 선택
-                if item:
-                    self.book_list.setCurrentItem(item)
-                    self.on_book_selected(self.book_list.row(item))
-                
-                # 데이터 저장
-                self.save_to_file()
-                
-                QMessageBox.information(self, "불러오기 완료", f"'{book_name}' 북이 성공적으로 불러와졌습니다.")
-                print(f"[DEBUG] 북 불러오기 완료: {book_name}")
-                
+                if os.path.exists(json_path):
+                    # 새 형식 처리
+                    self._load_new_format_book(temp_dir, json_path)
+                else:
+                    # 기존 형식 확인: character_list.zip 구조
+                    json_files = [f for f in os.listdir(temp_dir) if f.endswith('.json')]
+                    if json_files:
+                        # 기존 형식 처리
+                        self._load_legacy_format_book(temp_dir, json_files)
+                    else:
+                        QMessageBox.warning(self, "불러오기 실패", "올바른 북 파일이 아닙니다.")
+                        return
+                        
         except Exception as e:
             QMessageBox.critical(self, "불러오기 실패", f"북 불러오기 중 오류가 발생했습니다:\n{str(e)}")
             print(f"[ERROR] 북 불러오기 실패: {e}")
+
+    def _load_new_format_book(self, temp_dir, json_path):
+        """새 형식 북 파일 불러오기 (book_data.json)"""
+        with open(json_path, 'r', encoding='utf-8') as f:
+            book_data = json.load(f)
+        
+        # 북 이름 중복 체크
+        original_name = book_data.get("book_name", "불러온 북")
+        book_name = original_name
+        existing_names = set(self.state.books.keys())
+        
+        if book_name in existing_names:
+            for i in range(1, 1000):
+                candidate = f"{original_name} ({i})"
+                if candidate not in existing_names:
+                    book_name = candidate
+                    break
+        
+        # 이미지 파일들을 images 폴더로 복사
+        pages = book_data.get("pages", [])
+        for page in pages:
+            rel_path = page.get("image_path")
+            if rel_path:
+                full_path = os.path.join(temp_dir, rel_path)
+                if os.path.exists(full_path):
+                    # images 폴더 생성
+                    os.makedirs("images", exist_ok=True)
+                    # 고유한 파일명 생성
+                    dest_filename = f"{book_name}_{os.path.basename(full_path)}"
+                    dest_path = os.path.join("images", dest_filename)
+                    
+                    # 파일명 중복 방지
+                    counter = 1
+                    while os.path.exists(dest_path):
+                        name, ext = os.path.splitext(dest_filename)
+                        dest_filename = f"{name}_{counter}{ext}"
+                        dest_path = os.path.join("images", dest_filename)
+                        counter += 1
+                    
+                    shutil.copy(full_path, dest_path)
+                    page["image_path"] = dest_path
+                else:
+                    page["image_path"] = ""
+        
+        # 새 북을 books에 추가
+        emoji = book_data.get("emoji", "📕")
+        self.state.books[book_name] = {
+            "emoji": emoji,
+            "pages": pages
+        }
+        
+        self._add_book_to_ui(book_name, emoji)
+        
+        QMessageBox.information(self, "불러오기 완료", f"'{book_name}' 북이 성공적으로 불러와졌습니다.")
+        print(f"[DEBUG] 새 형식 북 불러오기 완료: {book_name}")
+
+    def _load_legacy_format_book(self, temp_dir, json_files):
+        """기존 형식 북 파일 불러오기 (character_list.zip 구조)"""
+        # 모든 페이지를 하나의 북에 통합
+        all_pages = []
+        
+        for json_file in json_files:
+            json_path = os.path.join(temp_dir, json_file)
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    pages = json.load(f)
+                    if isinstance(pages, list):
+                        all_pages.extend(pages)
+            except Exception as e:
+                print(f"[ERROR] JSON 파일 읽기 실패 {json_file}: {e}")
+                continue
+        
+        if not all_pages:
+            QMessageBox.warning(self, "불러오기 실패", "불러올 페이지가 없습니다.")
+            return
+        
+        # 새 북 이름 생성
+        base_name = "불러온 북"
+        book_name = base_name
+        existing_names = set(self.state.books.keys())
+        
+        if book_name in existing_names:
+            for i in range(1, 1000):
+                candidate = f"{base_name} ({i})"
+                if candidate not in existing_names:
+                    book_name = candidate
+                    break
+        
+        # 이미지 파일들을 images 폴더로 복사
+        for page in all_pages:
+            rel_path = page.get("image_path")
+            if rel_path:
+                full_path = os.path.join(temp_dir, rel_path)
+                if os.path.exists(full_path):
+                    # images 폴더 생성
+                    os.makedirs("images", exist_ok=True)
+                    # 고유한 파일명 생성
+                    dest_filename = f"{book_name}_{os.path.basename(full_path)}"
+                    dest_path = os.path.join("images", dest_filename)
+                    
+                    # 파일명 중복 방지
+                    counter = 1
+                    while os.path.exists(dest_path):
+                        name, ext = os.path.splitext(dest_filename)
+                        dest_filename = f"{name}_{counter}{ext}"
+                        dest_path = os.path.join("images", dest_filename)
+                        counter += 1
+                    
+                    shutil.copy(full_path, dest_path)
+                    page["image_path"] = dest_path
+                else:
+                    page["image_path"] = ""
+        
+        # 새 북을 books에 추가
+        emoji = "📚"  # 기존 형식은 특별한 이모지 사용
+        self.state.books[book_name] = {
+            "emoji": emoji,
+            "pages": all_pages
+        }
+        
+        self._add_book_to_ui(book_name, emoji)
+        
+        QMessageBox.information(self, "불러오기 완료", f"'{book_name}' 북이 성공적으로 불러와졌습니다.\n({len(all_pages)}개 페이지)")
+        print(f"[DEBUG] 기존 형식 북 불러오기 완료: {book_name} ({len(all_pages)}개 페이지)")
+
+    def _add_book_to_ui(self, book_name, emoji):
+        """북을 UI에 추가하는 공통 메서드"""
+        # 북 리스트 UI 업데이트
+        item = QListWidgetItem(f"{emoji} {book_name}")
+        item.setData(Qt.UserRole, book_name)
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
+        self.book_list.addItem(item)
+        
+        # 북 정렬 적용
+        if hasattr(self, 'book_sort_selector') and not self.book_sort_custom:
+            self.handle_book_sort()
+            # 정렬 후 새로 생성된 아이템 찾기
+            for i in range(self.book_list.count()):
+                book_item = self.book_list.item(i)
+                if book_item.data(Qt.UserRole) == book_name:
+                    item = book_item
+                    break
+        
+        # 새로 불러온 북 선택
+        if item:
+            self.book_list.setCurrentItem(item)
+            self.on_book_selected(self.book_list.row(item))
+        
+        # 데이터 저장
+        self.save_to_file()
 
     def add_character(self):
         if not self.current_book:
