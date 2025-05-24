@@ -1,0 +1,167 @@
+{
+  "새 북 (1)": {
+    "emoji": "📕",
+    "pages": [
+      {
+        "name": "액션 태그",
+        "tags": "NAI",
+        "desc": "이 태그는 Add Character 기능을 사용할 때만 적용 가능하며\n\n한 이미지에 원하는 캐릭터 두 명 이상을 묘사하는 과정에서\n\n서로 상호작용 하는 행동의 주체와 대상을 지정하거나\n\n(A가 B를 뒤에서 껴안기)\n\n혹은 서로가 동일한 행동으로 상호작용 하는 경우\n\n(A와 B가 서로 끌어안기)\n\n사용되는 태그입니다.\n\nsource# (행동을 취하는 주체 A)\n\ntarget# (대상 B)\n\nmutual# (A와 B가 서로 행동을 취함)\n\n으로 구별 지으며 # 다음에 바로 행동 프롬을 넣어주면 됩니다.\n\n해당 태그는 각 캐릭터 프롬에 알맞게 넣어주면 됩니다.",
+        "prompt": "source#hug / target#hug",
+        "image_path": "images\\0_4_0_0_0_9a85dfb074405e5b9de26757daeb1cc15a975e7e8d15f8fa8162ea2ff324c0b3.png",
+        "favorite": true
+      },
+      {
+        "name": "유나 크로포드",
+        "tags": "영웅전설, 섬의궤적, 여고생, 교복",
+        "desc": "섬의궤적3 에 등장하는 히로인",
+        "prompt": "juna crawford, medium breasts, yellow panties, groin, skirt lift, lifted by self, standing, cowboy shot, double-parted bangs, thors military academy branch campus uniform, jacket, pleated skirt, leg holster, white skirt, pink hair, ponytail, boots",
+        "image_path": "images\\1_3_1_2_1_0_0_0_0_20250514_114558.png",
+        "favorite": true
+      },
+      {
+        "name": "타카미 치카",
+        "tags": "러브라이브, 여고생, 아이돌",
+        "desc": "",
+        "prompt": "takami chika, serafuku, sailor collar, white shirt, red neckerchief, grey skirt, pleated skirt, black socks, ",
+        "image_path": "images\\2_1_3_4_3_2_2_2_2_2_1_image_a.png",
+        "favorite": true
+      },
+      {
+        "name": "카루이자와 케이",
+        "tags": "실지주, 여고생",
+        "desc": "",
+        "prompt": "karuizawa kei",
+        "image_path": "images\\3_2_2_3_2_1_1_1_1_1_0_20250519_164732.png",
+        "favorite": false
+      },
+      {
+        "name": "품질 태그",
+        "tags": "NAI",
+        "desc": "- 품질 태그\n\nbest quality\namazing quality\ngreat quality\nnormal quality\nbad quality\nworst quality\n\n- 미적 태그\n\nmasterpiece(V4.5만 해당)\ntop aesthetic(V4만 해당)\nvery aesthetic\naesthetic\ndispleasing\nvery displeasing\n\n품질 태그와 미적 태그는 상위권 태그를 여럿 끼얹기 보다는\n최상위 태그 하나만 골라서 사용하는 것을 추천합니다.",
+        "prompt": "",
+        "image_path": "images\\4_0_4_1_4_d7afe3e75ec72b20d0162c3e559fdbc60825fa3fb8690ca82723a226d88d624c.png",
+        "favorite": false
+      }
+    ]
+  },
+  "새 북 (2)": {
+    "emoji": "📕",
+    "pages": [
+      {
+        "name": "새 페이지",
+        "tags": "",
+        "description": "",
+        "prompt": "",
+        "created": "2025-05-24T07:56:54.552818",
+        "modified": "2025-05-24T07:56:54.552826"
+      },
+      {
+        "name": "새 페이지 (1)",
+        "tags": "",
+        "description": "",
+        "prompt": "",
+        "created": "2025-05-24T07:56:55.029846",
+        "modified": "2025-05-24T07:56:57.229124"
+      }
+    ]
+  },
+  "새 북 (3)": {
+    "emoji": "📕",
+    "pages": [
+      {
+        "name": "액션 태그",
+        "tags": "NAI",
+        "desc": "이 태그는 Add Character 기능을 사용할 때만 적용 가능하며\n\n한 이미지에 원하는 캐릭터 두 명 이상을 묘사하는 과정에서\n\n서로 상호작용 하는 행동의 주체와 대상을 지정하거나\n\n(A가 B를 뒤에서 껴안기)\n\n혹은 서로가 동일한 행동으로 상호작용 하는 경우\n\n(A와 B가 서로 끌어안기)\n\n사용되는 태그입니다.\n\nsource# (행동을 취하는 주체 A)\n\ntarget# (대상 B)\n\nmutual# (A와 B가 서로 행동을 취함)\n\n으로 구별 지으며 # 다음에 바로 행동 프롬을 넣어주면 됩니다.\n\n해당 태그는 각 캐릭터 프롬에 알맞게 넣어주면 됩니다.",
+        "prompt": "source#hug / target#hug",
+        "image_path": "images\\0_4_0_0_0_9a85dfb074405e5b9de26757daeb1cc15a975e7e8d15f8fa8162ea2ff324c0b3.png",
+        "favorite": true
+      },
+      {
+        "name": "유나 크로포드",
+        "tags": "영웅전설, 섬의궤적, 여고생, 교복",
+        "desc": "섬의궤적3 에 등장하는 히로인",
+        "prompt": "juna crawford, medium breasts, yellow panties, groin, skirt lift, lifted by self, standing, cowboy shot, double-parted bangs, thors military academy branch campus uniform, jacket, pleated skirt, leg holster, white skirt, pink hair, ponytail, boots",
+        "image_path": "images\\1_3_1_2_1_0_0_0_0_20250514_114558.png",
+        "favorite": true
+      },
+      {
+        "name": "타카미 치카",
+        "tags": "러브라이브, 여고생, 아이돌",
+        "desc": "",
+        "prompt": "takami chika, serafuku, sailor collar, white shirt, red neckerchief, grey skirt, pleated skirt, black socks, ",
+        "image_path": "images\\2_1_3_4_3_2_2_2_2_2_1_image_a.png",
+        "favorite": true
+      },
+      {
+        "name": "카루이자와 케이",
+        "tags": "실지주, 여고생",
+        "desc": "",
+        "prompt": "karuizawa kei",
+        "image_path": "images\\3_2_2_3_2_1_1_1_1_1_0_20250519_164732.png",
+        "favorite": false
+      },
+      {
+        "name": "품질 태그",
+        "tags": "NAI",
+        "desc": "- 품질 태그\n\nbest quality\namazing quality\ngreat quality\nnormal quality\nbad quality\nworst quality\n\n- 미적 태그\n\nmasterpiece(V4.5만 해당)\ntop aesthetic(V4만 해당)\nvery aesthetic\naesthetic\ndispleasing\nvery displeasing\n\n품질 태그와 미적 태그는 상위권 태그를 여럿 끼얹기 보다는\n최상위 태그 하나만 골라서 사용하는 것을 추천합니다.",
+        "prompt": "",
+        "image_path": "images\\4_0_4_1_4_d7afe3e75ec72b20d0162c3e559fdbc60825fa3fb8690ca82723a226d88d624c.png",
+        "favorite": false
+      }
+    ]
+  },
+  "새 북": {
+    "emoji": "📕",
+    "pages": [
+      {
+        "name": "품질 태그",
+        "tags": "NAI",
+        "desc": "- 품질 태그\n\nbest quality\namazing quality\ngreat quality\nnormal quality\nbad quality\nworst quality\n\n- 미적 태그\n\nmasterpiece(V4.5만 해당)\ntop aesthetic(V4만 해당)\nvery aesthetic\naesthetic\ndispleasing\nvery displeasing\n\n품질 태그와 미적 태그는 상위권 태그를 여럿 끼얹기 보다는\n최상위 태그 하나만 골라서 사용하는 것을 추천합니다.",
+        "prompt": "",
+        "image_path": "images\\샘플 북_0_4_0_4_1_4_d7afe3e75ec72b20d0162c3e559fdbc60825fa3fb8690ca82723a226d88d624c.png",
+        "favorite": false
+      },
+      {
+        "name": "타카미 치카",
+        "tags": "러브라이브, 여고생, 아이돌",
+        "desc": "",
+        "prompt": "takami chika, serafuku, sailor collar, white shirt, red neckerchief, grey skirt, pleated skirt, black socks, ",
+        "image_path": "images\\샘플 북_1_2_1_3_4_3_2_2_2_2_2_1_image_a.png",
+        "favorite": true
+      },
+      {
+        "name": "카루이자와 케이",
+        "tags": "실지주, 여고생",
+        "desc": "",
+        "prompt": "karuizawa kei",
+        "image_path": "images\\샘플 북_2_3_2_2_3_2_1_1_1_1_1_0_20250519_164732.png",
+        "favorite": false
+      },
+      {
+        "name": "유나 크로포드",
+        "tags": "영웅전설, 섬의궤적, 여고생, 교복",
+        "desc": "섬의궤적3 에 등장하는 히로인",
+        "prompt": "juna crawford, medium breasts, yellow panties, groin, skirt lift, lifted by self, standing, cowboy shot, double-parted bangs, thors military academy branch campus uniform, jacket, pleated skirt, leg holster, white skirt, pink hair, ponytail, boots",
+        "image_path": "images\\샘플 북_3_1_3_1_2_1_0_0_0_0_20250514_114558.png",
+        "favorite": true
+      },
+      {
+        "name": "액션 태그",
+        "tags": "NAI",
+        "desc": "이 태그는 Add Character 기능을 사용할 때만 적용 가능하며\n\n한 이미지에 원하는 캐릭터 두 명 이상을 묘사하는 과정에서\n\n서로 상호작용 하는 행동의 주체와 대상을 지정하거나\n\n(A가 B를 뒤에서 껴안기)\n\n혹은 서로가 동일한 행동으로 상호작용 하는 경우\n\n(A와 B가 서로 끌어안기)\n\n사용되는 태그입니다.\n\nsource# (행동을 취하는 주체 A)\n\ntarget# (대상 B)\n\nmutual# (A와 B가 서로 행동을 취함)\n\n으로 구별 지으며 # 다음에 바로 행동 프롬을 넣어주면 됩니다.\n\n해당 태그는 각 캐릭터 프롬에 알맞게 넣어주면 됩니다.",
+        "prompt": "source#hug / target#hug",
+        "image_path": "images\\샘플 북_4_0_4_0_0_0_9a85dfb074405e5b9de26757daeb1cc15a975e7e8d15f8fa8162ea2ff324c0b3.png",
+        "favorite": true
+      },
+      {
+        "name": "샘플 페이지",
+        "tags": "샘플, 예시",
+        "desc": "이것은 샘플 페이지입니다.",
+        "prompt": "샘플 프롬프트입니다.",
+        "favorite": false,
+        "created": "2025-05-24T03:04:52.224302",
+        "modified": "2025-05-24T03:04:52.224302"
+      }
+    ]
+  }
+}
