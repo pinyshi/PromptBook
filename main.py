@@ -654,7 +654,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.0.0.2"
+    VERSION = "v2.0.0.3"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -3423,27 +3423,49 @@ class PromptBook(QMainWindow):
                 theme_action.setChecked(True)
 
     def setup_custom_title_bar(self, main_layout):
-        """커스텀 타이틀 바 설정"""
+        """커스텀 타이틀 바를 설정합니다."""
         # 타이틀 바 위젯
         self.title_bar = QWidget()
         self.title_bar.setFixedHeight(35)
         self.title_bar.setObjectName("titleBar")
         
         title_layout = QHBoxLayout(self.title_bar)
-        title_layout.setContentsMargins(10, 0, 5, 0)
+        title_layout.setContentsMargins(0, 0, 5, 0)  # 왼쪽 여백을 0으로 설정
         title_layout.setSpacing(5)
         
         # 메뉴 버튼 (햄버거 메뉴)
         self.menu_btn = QPushButton("☰")
-        self.menu_btn.setFixedSize(30, 25)
+        self.menu_btn.setFixedSize(35, 35)  # 버튼 크기를 타이틀바 높이에 맞춤
+        self.menu_btn.setObjectName("menuButton")
         self.menu_btn.setToolTip("메뉴")
         self.menu_btn.clicked.connect(self.show_main_menu)
+        self.menu_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: white;
+                font-size: 16px;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+        """)
         
-        # 타이틀 텍스트
-        self.title_label = QLabel("프롬프트 북")
+        # 타이틀 라벨
+        title_text = f"프롬프트 북 {self.VERSION}"  # 버전 정보 추가
+        self.title_label = QLabel(title_text)
         self.title_label.setObjectName("titleLabel")
-        self.title_label.setAlignment(Qt.AlignCenter)  # 중앙정렬 추가
-        self.title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.title_label.setAlignment(Qt.AlignCenter)  # 중앙 정렬 설정
+        self.title_label.setMinimumWidth(200)  # 최소 너비 설정
+        self.title_label.setStyleSheet("""
+            QLabel {
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 0 10px;
+            }
+        """)
         
         # 윈도우 컨트롤 버튼들
         self.minimize_btn = QPushButton("－")
