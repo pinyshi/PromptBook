@@ -46,16 +46,8 @@ class ImageView(QGraphicsView):
         self.drop_hint = QLabel(self.viewport())
         self.drop_hint.setText("이미지 파일을 여기에\n드래그 앤 드롭하세요\n\n지원 형식: PNG, JPG, JPEG, BMP, GIF")
         self.drop_hint.setAlignment(Qt.AlignCenter)
-        self.drop_hint.setStyleSheet("""
-            QLabel {
-                color: #888;
-                background-color: rgba(240, 240, 240, 50);
-                font-size: 14px;
-                padding: 30px;
-                border: 2px dashed #bbb;
-                border-radius: 10px;
-            }
-        """)
+        # 기본 스타일 설정 (나중에 테마에 따라 업데이트됨)
+        self.update_drop_hint_style()
         self.update_drop_hint_position()
         
     def resizeEvent(self, event):
@@ -119,6 +111,87 @@ class ImageView(QGraphicsView):
         # PromptBook을 찾지 못한 경우 숨김
         self.drop_hint.setVisible(False)
     
+    def update_drop_hint_style(self, theme=None):
+        """드롭 힌트 스타일을 테마에 맞춰 업데이트"""
+        if not hasattr(self, 'drop_hint'):
+            return
+            
+        # 기본 테마 (어두운 모드)
+        if theme is None:
+            text_color = "#cccccc"
+            bg_color = "rgba(60, 60, 60, 80)"
+            border_color = "#555555"
+        else:
+            text_color = theme.get('text_secondary', '#cccccc')
+            # surface 색상을 기반으로 반투명 배경 생성
+            surface = theme.get('surface', '#3c3c3c')
+            # 16진수 색상을 RGB로 변환하여 투명도 적용
+            surface_rgb = surface.lstrip('#')
+            r = int(surface_rgb[0:2], 16)
+            g = int(surface_rgb[2:4], 16)
+            b = int(surface_rgb[4:6], 16)
+            bg_color = f"rgba({r}, {g}, {b}, 80)"
+            border_color = theme.get('border', '#555555')
+        
+        style = f"""
+            QLabel {{
+                color: {text_color};
+                background-color: {bg_color};
+                font-size: 14px;
+                padding: 30px;
+                border: 2px dashed {border_color};
+                border-radius: 10px;
+            }}
+        """
+        self.drop_hint.setStyleSheet(style)
+    
+    def update_drop_hint_drag_style(self):
+        """드래그 중일 때 스타일 (현재 테마의 primary 색상 사용)"""
+        if not hasattr(self, 'drop_hint'):
+            return
+            
+        # 부모 PromptBook에서 현재 테마 가져오기
+        theme = self.get_current_theme()
+        if theme:
+            primary_color = theme.get('primary', '#0078d4')
+            # primary 색상을 RGB로 변환하여 반투명 배경 생성
+            primary_rgb = primary_color.lstrip('#')
+            r = int(primary_rgb[0:2], 16)
+            g = int(primary_rgb[2:4], 16)
+            b = int(primary_rgb[4:6], 16)
+            bg_color = f"rgba({r}, {g}, {b}, 50)"
+        else:
+            # 기본값
+            primary_color = "#0078d4"
+            bg_color = "rgba(0, 120, 212, 50)"
+        
+        style = f"""
+            QLabel {{
+                color: {primary_color};
+                background-color: {bg_color};
+                font-size: 14px;
+                padding: 30px;
+                border: 2px dashed {primary_color};
+                border-radius: 10px;
+            }}
+        """
+        self.drop_hint.setStyleSheet(style)
+    
+    def restore_drop_hint_style(self):
+        """드롭 힌트를 원래 스타일로 복원"""
+        theme = self.get_current_theme()
+        self.update_drop_hint_style(theme)
+    
+    def get_current_theme(self):
+        """부모 PromptBook에서 현재 테마 정보 가져오기"""
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, PromptBook):
+                current_theme_name = getattr(parent, 'current_theme', '어두운 모드')
+                return parent.THEMES.get(current_theme_name)
+            parent = parent.parent()
+        return None
+    
     def dragEnterEvent(self, event):
         """드래그 엔터 이벤트 처리"""
         if event.mimeData().hasUrls():
@@ -128,33 +201,15 @@ class ImageView(QGraphicsView):
                 file_path = urls[0].toLocalFile()
                 if self.is_image_file(file_path):
                     event.acceptProposedAction()
-                    # 드래그 중일 때 시각적 피드백
-                    self.drop_hint.setStyleSheet("""
-                        QLabel {
-                            color: #2c5aa0;
-                            background-color: rgba(44, 90, 160, 30);
-                            font-size: 14px;
-                            padding: 30px;
-                            border: 2px dashed #2c5aa0;
-                            border-radius: 10px;
-                        }
-                    """)
+                    # 드래그 중일 때 시각적 피드백 (현재 테마의 primary 색상 사용)
+                    self.update_drop_hint_drag_style()
                     return
         event.ignore()
     
     def dragLeaveEvent(self, event):
         """드래그 리브 이벤트 처리"""
         # 원래 스타일로 복원
-        self.drop_hint.setStyleSheet("""
-            QLabel {
-                color: #888;
-                background-color: rgba(240, 240, 240, 50);
-                font-size: 14px;
-                padding: 30px;
-                border: 2px dashed #bbb;
-                border-radius: 10px;
-            }
-        """)
+        self.restore_drop_hint_style()
         event.accept()
     
     def dragMoveEvent(self, event):
@@ -185,16 +240,7 @@ class ImageView(QGraphicsView):
                         parent = parent.parent()
                     
                     # 원래 스타일로 복원
-                    self.drop_hint.setStyleSheet("""
-                        QLabel {
-                            color: #888;
-                            background-color: rgba(240, 240, 240, 50);
-                            font-size: 14px;
-                            padding: 30px;
-                            border: 2px dashed #bbb;
-                            border-radius: 10px;
-                        }
-                    """)
+                    self.restore_drop_hint_style()
                     event.acceptProposedAction()
                     return
         event.ignore()
@@ -282,7 +328,7 @@ class PageItemWidget(QWidget):
             parent = parent.parent()
     
     def set_favorite(self, is_favorite):
-        self.star_label.setText("⭐" if is_favorite else "")
+        self.star_label.setText("❤️" if is_favorite else "🖤")
     
     def set_name(self, name):
         self.name_label.setText(name)
@@ -348,7 +394,7 @@ class BookItemWidget(QWidget):
             parent = parent.parent()
     
     def set_favorite(self, is_favorite):
-        self.star_label.setText("⭐" if is_favorite else "")
+        self.star_label.setText("❤️" if is_favorite else "🖤")
     
     def set_name(self, name):
         self.name_label.setText(name)
@@ -395,10 +441,345 @@ class CharacterList(QListWidget):
         else:
             event.ignore()
 
+class CustomSplitterHandle(QSplitterHandle):
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # 부모 스플리터에서 현재 테마 가져오기
+        main_window = self.parent()
+        while main_window and not isinstance(main_window, PromptBook):
+            main_window = main_window.parent()
+        
+        if main_window:
+            current_theme = getattr(main_window, 'current_theme', '어두운 모드')
+            theme = main_window.THEMES.get(current_theme, main_window.THEMES['어두운 모드'])
+            
+            # 배경색을 메인 배경색과 통일
+            bg_color = QColor(theme['background'])
+            painter.fillRect(self.rect(), bg_color)
+            
+            rect = self.rect()
+            center_x = rect.width() // 2
+            center_y = rect.height() // 2
+            
+            if self.orientation() == Qt.Horizontal:
+                # 세로 스플리터: 작은 점들로 그립 표시 (상하 중앙에)
+                grip_color = QColor(theme['text_secondary'])
+                if current_theme in ["블루 네온", "핑크 네온"]:
+                    grip_color = QColor(theme['primary'])
+                
+                painter.setBrush(QBrush(grip_color))
+                painter.setPen(Qt.NoPen)
+                
+                # 3개의 작은 원형 점들
+                dot_size = 2
+                spacing = 6
+                
+                for i in range(3):
+                    y = center_y - spacing + (i * spacing)
+                    painter.drawEllipse(center_x - dot_size//2, y - dot_size//2, dot_size, dot_size)
+            else:
+                # 가로 스플리터: 작은 점들로 그립 표시
+                grip_color = QColor(theme['text_secondary'])
+                if current_theme in ["블루 네온", "핑크 네온"]:
+                    grip_color = QColor(theme['primary'])
+                
+                painter.setBrush(QBrush(grip_color))
+                painter.setPen(Qt.NoPen)
+                
+                # 3개의 작은 원형 점들
+                dot_size = 2
+                spacing = 6
+                
+                for i in range(3):
+                    x = center_x - spacing + (i * spacing)
+                    painter.drawEllipse(x - dot_size//2, center_y - dot_size//2, dot_size, dot_size)
+
+class CustomSplitter(QSplitter):
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setHandleWidth(6)  # 더 작게 조정
+        self.setChildrenCollapsible(False)
+    
+    def createHandle(self):
+        return CustomSplitterHandle(self.orientation(), self)
+
+class ResizeHandle(QWidget):
+    """투명한 윈도우 리사이즈 핸들"""
+    def __init__(self, direction, parent=None):
+        super().__init__(parent)
+        self.direction = direction
+        self.parent_window = parent
+        self.dragging = False
+        self.drag_start_pos = None
+        self.drag_start_geo = None
+        
+        # 기본 설정
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        
+        # 커서 설정
+        self.setup_cursor()
+        
+        # 초기 스타일 (완전 투명)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+    
+    def setup_cursor(self):
+        """방향에 따른 커서 설정"""
+        if self.direction in ['top', 'bottom']:
+            self.setCursor(Qt.SizeVerCursor)
+        elif self.direction in ['left', 'right']:
+            self.setCursor(Qt.SizeHorCursor)
+        elif self.direction in ['top-left', 'bottom-right']:
+            self.setCursor(Qt.SizeFDiagCursor)
+        elif self.direction in ['top-right', 'bottom-left']:
+            self.setCursor(Qt.SizeBDiagCursor)
+    
+    def enterEvent(self, event):
+        """마우스 호버 시 약간 보이게"""
+        if not self.parent_window.isMaximized():
+            # 현재 테마에 맞는 색상으로 호버 효과
+            current_theme = getattr(self.parent_window, 'current_theme', '어두운 모드')
+            theme = self.parent_window.THEMES.get(current_theme, self.parent_window.THEMES['어두운 모드'])
+            
+            self.setStyleSheet(f"""
+                QWidget {{
+                    background-color: {theme['primary']};
+                    border: none;
+                    opacity: 0.3;
+                }}
+            """)
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        """마우스 벗어나면 다시 투명하게"""
+        self.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        super().leaveEvent(event)
+    
+    def mousePressEvent(self, event):
+        """리사이즈 시작"""
+        if event.button() == Qt.LeftButton and not self.parent_window.isMaximized():
+            self.dragging = True
+            self.drag_start_pos = event.globalPosition().toPoint()
+            self.drag_start_geo = self.parent_window.geometry()
+            event.accept()
+    
+    def mouseMoveEvent(self, event):
+        """리사이즈 처리"""
+        if self.dragging and event.buttons() == Qt.LeftButton:
+            self.handle_resize(event.globalPosition().toPoint())
+            event.accept()
+    
+    def mouseReleaseEvent(self, event):
+        """리사이즈 종료"""
+        self.dragging = False
+        self.drag_start_pos = None
+        self.drag_start_geo = None
+    
+    def handle_resize(self, global_pos):
+        """실제 리사이즈 수행"""
+        if not self.drag_start_pos or not self.drag_start_geo:
+            return
+            
+        # 마우스 이동 거리 계산
+        delta = global_pos - self.drag_start_pos
+        dx, dy = delta.x(), delta.y()
+        
+        # 원래 지오메트리
+        old_geo = self.drag_start_geo
+        new_x, new_y = old_geo.x(), old_geo.y()
+        new_width, new_height = old_geo.width(), old_geo.height()
+        
+        # 최소 크기 제한
+        min_width, min_height = 400, 300
+        
+        # 최소 크기 체크
+        proposed_width = new_width
+        proposed_height = new_height
+        width_at_limit = False
+        height_at_limit = False
+        
+        # 방향에 따른 리사이즈 처리 (정상적인 윈도우 동작)
+        if 'left' in self.direction:
+            # 왼쪽에서 리사이즈: 왼쪽으로 드래그하면 왼쪽으로 늘어남
+            proposed_width = old_geo.width() - dx
+            if proposed_width >= min_width:
+                new_width = proposed_width
+                new_x = old_geo.x() + dx  # 왼쪽 가장자리 이동
+            else:
+                # 최소 크기에 도달하면 더 이상 축소하지 않음
+                width_at_limit = True
+        elif 'right' in self.direction:
+            # 오른쪽에서 리사이즈: 오른쪽으로 드래그하면 오른쪽으로 늘어남
+            proposed_width = old_geo.width() + dx
+            if proposed_width >= min_width:
+                new_width = proposed_width
+            else:
+                width_at_limit = True
+            
+        if 'top' in self.direction:
+            # 위쪽에서 리사이즈: 위로 드래그하면 위로 늘어남
+            proposed_height = old_geo.height() - dy
+            if proposed_height >= min_height:
+                new_height = proposed_height
+                new_y = old_geo.y() + dy  # 위쪽 가장자리 이동
+            else:
+                # 최소 크기에 도달하면 더 이상 축소하지 않음
+                height_at_limit = True
+        elif 'bottom' in self.direction:
+            # 아래쪽에서 리사이즈: 아래로 드래그하면 아래로 늘어남
+            proposed_height = old_geo.height() + dy
+            if proposed_height >= min_height:
+                new_height = proposed_height
+            else:
+                height_at_limit = True
+        
+        # 최소 크기에 도달하지 않았을 때만 지오메트리 적용
+        if not width_at_limit and not height_at_limit:
+            self.parent_window.setGeometry(new_x, new_y, new_width, new_height)
+
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
+    
+    # 테마 정의
+    THEMES = {
+        "어두운 모드": {
+            "background": "#2b2b2b",
+            "surface": "#3c3c3c", 
+            "primary": "#8a8a8a",
+            "text": "#ffffff",
+            "text_secondary": "#cccccc",
+            "border": "#555555",
+            "hover": "#4a4a4a",
+            "selected": "#8a8a8a",
+            "button": "#404040",
+            "button_hover": "#525252"
+        },
+        "밝은 모드": {
+            "background": "#ffffff",
+            "surface": "#f5f5f5",
+            "primary": "#999999", 
+            "text": "#000000",
+            "text_secondary": "#666666",
+            "border": "#d0d0d0",
+            "hover": "#e0e0e0",
+            "selected": "#999999",
+            "button": "#e1e1e1",
+            "button_hover": "#d8d8d8"
+        },
+        "파란 바다": {
+            "background": "#1a2332",
+            "surface": "#233447",
+            "primary": "#4fa8da",
+            "text": "#e8f4fd",
+            "text_secondary": "#b8d4ea",
+            "border": "#4a6b8a",
+            "hover": "#2d4a61",
+            "selected": "#4fa8da",
+            "button": "#2a3f56",
+            "button_hover": "#355070"
+        },
+        "숲속": {
+            "background": "#1a2e1a",
+            "surface": "#254725",
+            "primary": "#4caf50",
+            "text": "#e8f5e8",
+            "text_secondary": "#b8e6b8",
+            "border": "#4a7c4a",
+            "hover": "#2d5a2d",
+            "selected": "#4caf50",
+            "button": "#2a4a2a",
+            "button_hover": "#356535"
+        },
+        "보라 우주": {
+            "background": "#2a1a2e",
+            "surface": "#3d2547", 
+            "primary": "#9c27b0",
+            "text": "#f3e8f5",
+            "text_secondary": "#d1b8d6",
+            "border": "#7a4a7c",
+            "hover": "#512d5a",
+            "selected": "#9c27b0",
+            "button": "#4a2a4a",
+            "button_hover": "#653565"
+        },
+        "황혼": {
+            "background": "#2e221a",
+            "surface": "#473525",
+            "primary": "#ff9800",
+            "text": "#fff2e8",
+            "text_secondary": "#e6c8b8",
+            "border": "#7c5a4a",
+            "hover": "#5a3d2d",
+            "selected": "#ff9800", 
+            "button": "#4a3a2a",
+            "button_hover": "#654535"
+        },
+        "벚꽃": {
+            "background": "#2e1a26",
+            "surface": "#472535",
+            "primary": "#e91e63",
+            "text": "#fde8f0",
+            "text_secondary": "#e6b8ca",
+            "border": "#7c4a5f",
+            "hover": "#5a2d41",
+            "selected": "#e91e63",
+            "button": "#4a2a38",
+            "button_hover": "#65354a"
+        },
+        "민트": {
+            "background": "#1a4d40",
+            "surface": "#2d6659",
+            "primary": "#66ffcc",
+            "text": "#f0fff0",
+            "text_secondary": "#99ffdd",
+            "border": "#80ffcc",
+            "hover": "#40a085",
+            "selected": "#66ffcc",
+            "button": "#40a085",
+            "button_hover": "#66ffcc"
+        },
+        "블루 네온": {
+            "background": "#0a0a0a",
+            "surface": "#1a1a1a",
+            "primary": "#00ffff",
+            "text": "#ffffff",
+            "text_secondary": "#80ffff",
+            "border": "#00cccc",
+            "hover": "#2a2a2a",
+            "selected": "#00ffff",
+            "button": "#1a1a1a",
+            "button_hover": "#2a2a2a"
+        },
+        "핑크 네온": {
+            "background": "#0a0a0a",
+            "surface": "#1a1a1a",
+            "primary": "#ff00ff",
+            "text": "#ffffff",
+            "text_secondary": "#ff80ff",
+            "border": "#cc00cc",
+            "hover": "#2a2a2a",
+            "selected": "#ff00ff",
+            "button": "#1a1a1a",
+            "button_hover": "#2a2a2a"
+        }
+    }
     
     emoji_options = [
         "📕", "📘", "📙", "📗", "📓", "📔", "📒", "📚", "📖", "📝",
@@ -455,20 +836,51 @@ class PromptBook(QMainWindow):
         self.resize(1000, 600)  # 기본 크기 설정
         self.setAcceptDrops(True)
         
+        # 프레임리스 윈도우로 설정 (커스텀 타이틀 바를 위해)
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        
+        # 마우스 트래킹 활성화 (마우스 버튼을 누르지 않아도 이벤트 받기)
+        self.setMouseTracking(True)
+        
+        # 드래그 관련 변수
+        self.drag_position = None
+        
+        # 둥근 모서리를 위한 변수
+        self.border_radius = 12
+        
+        # 리사이즈 핸들들
+        self.resize_handles = {}
+        
+        # 저장된 설정 먼저 로드 (테마 정보 포함)
+        self.load_ui_settings_early()
+        
+        # 테마 관련 초기화 (apply_theme 호출 전에 필요)
+        self.theme_group = QActionGroup(self)
+        
         # UI 구성
         self.setup_ui()
         
-        # 저장된 설정이 있다면 적용
+        # UI 구성 후 나머지 설정 적용
         if os.path.exists(self.SETTINGS_FILE):
-            self.load_ui_settings()
+            self.load_ui_settings_late()
             
         # 데이터 로드
         self.load_from_file()
+        
+        # 저장된 테마 적용 또는 기본 테마 적용
+        self.apply_theme(getattr(self, 'current_theme', '어두운 모드'))
+            
+        # 단축키 설정
+        self.setup_shortcuts()
+        
+        # 리사이즈 핸들 설정
+        self.setup_resize_handles()
 
     def setup_ui(self):
         self.setWindowTitle("프롬프트 북")
         self.setMinimumSize(1000, 600)
-        self.setup_menubar()
+        # self.setup_menubar()  # 메뉴바는 커스텀 타이틀바에 통합
+        self.setup_theme_actions()  # 테마 액션들 설정
         self.setup_central_widget()
         self.setup_book_list()
         self.setup_character_list()
@@ -496,6 +908,23 @@ class PromptBook(QMainWindow):
         # 테마 메뉴
         theme_menu = menubar.addMenu("테마")
         
+        # 테마 액션 그룹 (라디오 버튼처럼 동작)
+        self.theme_group = QActionGroup(self)
+        
+        for theme_name in self.THEMES.keys():
+            theme_action = QAction(theme_name, self)
+            theme_action.setCheckable(True)
+            theme_action.triggered.connect(lambda checked, name=theme_name: self.apply_theme(name))
+            self.theme_group.addAction(theme_action)
+            theme_menu.addAction(theme_action)
+            
+            # 기본 테마 설정
+            if theme_name == "어두운 모드":
+                theme_action.setChecked(True)
+        
+        # 현재 테마 저장용 변수
+        self.current_theme = "어두운 모드"
+        
         # 정보 메뉴
         info_menu = menubar.addMenu("정보")
 
@@ -503,9 +932,13 @@ class PromptBook(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(0, 0, 0, 0)  # 여백 제거
         
-        # 메인 스플리터 생성
-        self.main_splitter = QSplitter(Qt.Horizontal)  # 인스턴스 변수로 변경
+        # 커스텀 타이틀 바 추가
+        self.setup_custom_title_bar(layout)
+        
+        # 메인 스플리터 생성 (커스텀 스플리터 사용)
+        self.main_splitter = CustomSplitter(Qt.Horizontal)  # 커스텀 스플리터 사용
         layout.addWidget(self.main_splitter)
         
         # 기본 스플리터 크기 설정
@@ -652,11 +1085,11 @@ class PromptBook(QMainWindow):
         self.copy_button.clicked.connect(self.copy_prompt_to_clipboard)
         self.copy_button.setEnabled(False)
         
-        self.duplicate_button = QPushButton("📄 페이지 복제")
+        self.duplicate_button = QPushButton("📄 복제")
         self.duplicate_button.clicked.connect(self.duplicate_selected_character_with_tooltip)
         self.duplicate_button.setEnabled(False)
         
-        self.delete_button = QPushButton("🗑️ 페이지 삭제")
+        self.delete_button = QPushButton("🗑️ 삭제")
         self.delete_button.clicked.connect(self.delete_selected_character_with_tooltip)
         self.delete_button.setEnabled(False)
         
@@ -966,6 +1399,7 @@ class PromptBook(QMainWindow):
             self.image_view.update_drop_hint_visibility()
             
         self.update_all_buttons_state()
+        self.update_image_buttons_state()
     
     def on_lock_changed(self):
         """잠금 상태가 변경되었을 때 실행되는 함수"""
@@ -990,7 +1424,8 @@ class PromptBook(QMainWindow):
             "sort_mode": self.sort_selector.currentText() if hasattr(self, "sort_selector") else "오름차순 정렬",
             "sort_mode_custom": self.sort_mode_custom,
             "book_sort_mode": self.book_sort_selector.currentText() if hasattr(self, "book_sort_selector") else "오름차순 정렬",
-            "book_sort_custom": getattr(self, "book_sort_custom", False)
+            "book_sort_custom": getattr(self, "book_sort_custom", False),
+            "current_theme": getattr(self, "current_theme", "어두운 모드")
         }
         try:
             with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
@@ -998,7 +1433,26 @@ class PromptBook(QMainWindow):
         except Exception as e:
             print(f"[ERROR] UI 설정 저장 실패: {e}")
 
-    def load_ui_settings(self):
+    def load_ui_settings_early(self):
+        """UI 구성 전에 로드할 설정들 (테마 등)"""
+        if not os.path.exists(self.SETTINGS_FILE):
+            return
+            
+        try:
+            with open(self.SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                
+                # 테마 설정만 먼저 복원
+                saved_theme = settings.get("current_theme", "어두운 모드")
+                if saved_theme in self.THEMES:
+                    self.current_theme = saved_theme
+                    print(f"[DEBUG] 저장된 테마 로드: {saved_theme}")
+                        
+        except Exception as e:
+            print(f"[ERROR] 초기 UI 설정 불러오기 실패: {e}")
+    
+    def load_ui_settings_late(self):
+        """UI 구성 후에 로드할 설정들 (크기, 정렬 등)"""
         try:
             with open(self.SETTINGS_FILE, 'r', encoding='utf-8') as f:
                 settings = json.load(f)
@@ -1270,10 +1724,12 @@ class PromptBook(QMainWindow):
         # 이미지 파일 경로 저장
         self.state.characters[self.current_index]["image_path"] = file_path
         self.edited = True
-        self.update_image_buttons_state()
         
         # 이미지 뷰 업데이트
         self.update_image_view(file_path)
+        
+        # 버튼 상태 업데이트
+        self.update_image_buttons_state()
         
         # 상태 저장
         if self.current_book:
@@ -1778,24 +2234,10 @@ class PromptBook(QMainWindow):
             return
             
         menu = QMenu()
-        # 메뉴 여백 최적화
-        menu.setStyleSheet("""
-            QMenu {
-                padding: 2px;
-            }
-            QMenu::item {
-                padding: 4px 16px 4px 4px;
-                margin: 0px;
-            }
-            QMenu::item:selected {
-                background-color: #505050;
-                color: white;
-            }
-            QMenu::item:hover {
-                background-color: #505050;
-                color: white;
-            }
-        """)
+        
+        # 메뉴 스타일 적용
+        menu_style = self.get_menu_style()
+        menu.setStyleSheet(menu_style)
         name = item.data(Qt.UserRole)
         is_favorite = False
         
@@ -1807,9 +2249,9 @@ class PromptBook(QMainWindow):
         
         # 즐겨찾기 액션 추가
         if is_favorite:
-            favorite_action = menu.addAction("❌ 즐겨찾기 해제")
+            favorite_action = menu.addAction("🖤 즐겨찾기 해제")
         else:
-            favorite_action = menu.addAction("⭐ 즐겨찾기")
+            favorite_action = menu.addAction("❤️ 즐겨찾기")
         
         # 구분선 추가
         menu.addSeparator()
@@ -1846,23 +2288,7 @@ class PromptBook(QMainWindow):
         
         for group_name, emojis in page_emoji_groups.items():
             group_menu = QMenu(group_name)
-            group_menu.setStyleSheet("""
-                QMenu {
-                    padding: 2px;
-                }
-                QMenu::item {
-                    padding: 4px 16px 4px 4px;
-                    margin: 0px;
-                }
-                QMenu::item:selected {
-                    background-color: #505050;
-                    color: white;
-                }
-                QMenu::item:hover {
-                    background-color: #505050;
-                    color: white;
-                }
-            """)
+            group_menu.setStyleSheet(menu_style)
             emoji_menu.addMenu(group_menu)
             for emoji in emojis:
                 action = group_menu.addAction(emoji)
@@ -1872,8 +2298,8 @@ class PromptBook(QMainWindow):
         menu.addSeparator()
         
         # 기타 액션들 추가
-        duplicate_action = menu.addAction("📋 페이지 복제")
-        delete_action = menu.addAction("🗑️ 페이지 삭제")
+        duplicate_action = menu.addAction("📋 복제")
+        delete_action = menu.addAction("🗑️ 삭제")
         
         # 메뉴 표시 및 액션 처리
         action = menu.exec_(self.char_list.mapToGlobal(position))
@@ -1909,24 +2335,9 @@ class PromptBook(QMainWindow):
             return
             
         menu = QMenu()
-        # 메뉴 여백 최적화
-        menu.setStyleSheet("""
-            QMenu {
-                padding: 2px;
-            }
-            QMenu::item {
-                padding: 4px 16px 4px 4px;
-                margin: 0px;
-            }
-            QMenu::item:selected {
-                background-color: #505050;
-                color: white;
-            }
-            QMenu::item:hover {
-                background-color: #505050;
-                color: white;
-            }
-        """)
+        # 메뉴 스타일 적용
+        menu_style = self.get_menu_style()
+        menu.setStyleSheet(menu_style)
         
         name = item.data(Qt.UserRole)
         is_favorite = False
@@ -1937,9 +2348,9 @@ class PromptBook(QMainWindow):
         
         # 즐겨찾기 액션 추가
         if is_favorite:
-            favorite_action = menu.addAction("❌ 즐겨찾기 해제")
+            favorite_action = menu.addAction("🖤 즐겨찾기 해제")
         else:
-            favorite_action = menu.addAction("⭐ 즐겨찾기")
+            favorite_action = menu.addAction("❤️ 즐겨찾기")
         
         # 구분선 추가
         menu.addSeparator()
@@ -2117,9 +2528,19 @@ class PromptBook(QMainWindow):
                 self.on_book_selected(0)
 
     def update_image_buttons_state(self):
-        enabled = self.current_book is not None
-        self.image_load_btn.setEnabled(enabled)
-        self.image_remove_btn.setEnabled(enabled)
+        # 이미지 불러오기 버튼: 북과 페이지가 선택되어 있을 때 활성화
+        page_selected = (self.current_book is not None and 
+                        self.current_index >= 0 and 
+                        self.current_index < len(self.state.characters))
+        self.image_load_btn.setEnabled(page_selected)
+        
+        # 이미지 제거 버튼: 페이지가 선택되어 있고 이미지가 있을 때만 활성화
+        has_image = False
+        if page_selected:
+            image_path = self.state.characters[self.current_index].get("image_path", "")
+            has_image = image_path and os.path.exists(image_path)
+        
+        self.image_remove_btn.setEnabled(has_image)
 
     def apply_sorting(self):
         from promptbook_features import sort_characters
@@ -2179,6 +2600,10 @@ class PromptBook(QMainWindow):
             self.state.books[self.current_book]["pages"] = self.state.characters
             self.image_scene.clear()
             self.image_view.update_drop_hint_visibility()
+            
+            # 버튼 상태 업데이트
+            self.update_image_buttons_state()
+            
             self.save_to_file()
 
 
@@ -2284,12 +2709,923 @@ class PromptBook(QMainWindow):
             
             self.save_to_file()
 
+    def apply_theme(self, theme_name):
+        """테마를 적용합니다."""
+        if theme_name not in self.THEMES:
+            return
+            
+        self.current_theme = theme_name
+        theme = self.THEMES[theme_name]
+        
+        # 전체 애플리케이션 스타일시트 적용
+        style = f"""
+        QMainWindow {{
+            background-color: {theme['background']};
+            color: {theme['text']};
+            border: 2px solid {theme['border']};
+            border-radius: 12px;
+        }}
+        
+        QWidget {{
+            background-color: {theme['background']};
+            color: {theme['text']};
+        }}
+        
+        QLabel {{
+            color: {theme['text']};
+            background-color: transparent;
+        }}
+        
+        QLineEdit, CustomLineEdit {{
+            background-color: {theme['surface']};
+            border: 1px solid {theme['border']};
+            color: {theme['text']};
+            padding: 4px;
+            border-radius: 3px;
+        }}
+        
+        QLineEdit:focus, CustomLineEdit:focus {{
+            border: 2px solid {theme['primary']};
+        }}
+        
+        QTextEdit {{
+            background-color: {theme['surface']};
+            border: 1px solid {theme['border']};
+            color: {theme['text']};
+            padding: 4px;
+            border-radius: 3px;
+        }}
+        
+        QTextEdit:focus {{
+            border: 2px solid {theme['primary']};
+        }}
+        
+        QPushButton {{
+            background-color: {theme['button']};
+            border: 1px solid {theme['border']};
+            color: {theme['text']};
+            padding: 6px 12px;
+            border-radius: 3px;
+            font-weight: bold;
+        }}
+        
+        QPushButton:hover {{
+            background-color: {theme['button_hover']};
+        }}
+        
+        QPushButton:pressed {{
+            background-color: {theme['primary']};
+        }}
+        
+        QPushButton:disabled {{
+            background-color: {theme['surface']};
+            color: {theme['text_secondary']};
+        }}
+        
+        QListWidget {{
+            background-color: {theme['surface']};
+            border: 1px solid {theme['border']};
+            color: {theme['text']};
+            outline: none;
+            border-radius: 3px;
+        }}
+        
+        QListWidget::item {{
+            background-color: transparent;
+            border: none;
+            padding: 2px;
+        }}
+        
+        QListWidget::item:selected {{
+            background-color: {theme['selected']};
+            color: white;
+        }}"""
+        
+        # 네온 테마용 특별 효과
+        if theme_name in ["블루 네온", "핑크 네온"]:
+            # 네온 윈도우 테두리
+            style = style.replace(
+                f"border: 2px solid {theme['border']};",
+                f"border: 3px solid {theme['primary']};"
+            )
+            
+            # 네온 타이틀 바 스타일
+            title_bar_style = f"""
+            QWidget#titleBar {{
+                background-color: {theme['background']};
+                border-bottom: 3px solid {theme['primary']};
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+            }}
+            
+            QLabel#titleLabel {{
+                color: {theme['primary']};
+                background-color: transparent;
+                font-weight: bold;
+                font-size: 14px;
+            }}
+            """
+            
+            style += title_bar_style
+            style += f"""
+        QPushButton {{
+            background-color: {theme['button']};
+            border: 3px solid {theme['primary']};
+            color: {theme['text']};
+            padding: 6px 12px;
+            border-radius: 5px;
+            font-weight: bold;
+        }}
+        
+        QPushButton:hover {{
+            background-color: {theme['button_hover']};
+            border: 3px solid {theme['primary']};
+            color: {theme['primary']};
+        }}
+        
+        QPushButton:pressed {{
+            background-color: {theme['primary']};
+            color: black;
+            border: 3px solid {theme['primary']};
+        }}
+        
+        QListWidget::item:selected {{
+            background-color: {theme['selected']};
+            color: black;
+            border: 2px solid {theme['primary']};
+            font-weight: bold;
+        }}
+        
+        QLineEdit, QTextEdit, CustomLineEdit {{
+            background-color: {theme['button']};
+            border: 2px solid {theme['border']};
+            color: {theme['text']};
+            padding: 4px;
+            border-radius: 3px;
+        }}
+        
+        QLineEdit:focus, QTextEdit:focus, CustomLineEdit:focus {{
+            border: 3px solid {theme['primary']};
+            background-color: {theme['button']};
+        }}
+        
+        QPushButton:disabled {{
+            background-color: {theme['background']};
+            border: 1px solid #333333;
+            color: #555555;
+            font-weight: normal;
+        }}
+        
+        QSplitter::handle:horizontal {{
+            width: 10px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {theme['background']}, 
+                stop:0.5 {theme['primary']}, 
+                stop:1 {theme['background']});
+            border: 2px solid {theme['primary']};
+        }}
+        
+        QSplitter::handle:horizontal:hover {{
+            background: {theme['primary']};
+            border: 2px solid {theme['primary']};
+        }}
+        
+        QSplitter::handle:vertical {{
+            height: 10px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {theme['background']}, 
+                stop:0.5 {theme['primary']}, 
+                stop:1 {theme['background']});
+            border: 2px solid {theme['primary']};
+        }}
+        
+        QSplitter::handle:vertical:hover {{
+            background: {theme['primary']};
+            border: 2px solid {theme['primary']};
+        }}"""
+        
+        style += """
+        
+        QListWidget::item:hover {{
+            background-color: {theme['hover']};
+        }}
+        
+        QComboBox {{
+            background-color: {theme['button']};
+            border: 1px solid {theme['border']};
+            color: {theme['text']};
+            padding: 4px 8px;
+            border-radius: 3px;
+        }}
+        
+        QComboBox:hover {{
+            background-color: {theme['button_hover']};
+        }}
+        
+        QComboBox::drop-down {{
+            border: none;
+            width: 20px;
+        }}
+        
+        QComboBox::down-arrow {{
+            image: none;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 6px solid {theme['text']};
+            margin-right: 6px;
+        }}
+        
+        QComboBox QAbstractItemView {{
+            background-color: {theme['surface']};
+            border: 1px solid {theme['border']};
+            color: {theme['text']};
+            selection-background-color: {theme['selected']};
+        }}
+        
+        QCheckBox {{
+            color: {theme['text']};
+            spacing: 5px;
+        }}
+        
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            border: 1px solid {theme['border']};
+            border-radius: 2px;
+            background-color: {theme['surface']};
+        }}
+        
+        QCheckBox::indicator:checked {{
+            background-color: {theme['primary']};
+            image: none;
+        }}
+        
+        QCheckBox::indicator:checked:after {{
+            content: "✓";
+            color: white;
+            font-weight: bold;
+        }}
+        
+        QScrollBar:vertical {{
+            background-color: {theme['surface']};
+            width: 12px;
+            border: none;
+            border-radius: 6px;
+        }}
+        
+        QScrollBar::handle:vertical {{
+            background-color: {theme['border']};
+            border-radius: 6px;
+            min-height: 20px;
+        }}
+        
+        QScrollBar::handle:vertical:hover {{
+            background-color: {theme['text_secondary']};
+        }}
+        
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0px;
+        }}
+        
+        QScrollBar:horizontal {{
+            background-color: {theme['surface']};
+            height: 12px;
+            border: none;
+            border-radius: 6px;
+        }}
+        
+        QScrollBar::handle:horizontal {{
+            background-color: {theme['border']};
+            border-radius: 6px;
+            min-width: 20px;
+        }}
+        
+        QScrollBar::handle:horizontal:hover {{
+            background-color: {theme['text_secondary']};
+        }}
+        
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+            width: 0px;
+        }}
+        
+        QMenuBar {{
+            background-color: {theme['surface']};
+            color: {theme['text']};
+            border-bottom: 1px solid {theme['border']};
+        }}
+        
+        QMenuBar::item {{
+            background-color: transparent;
+            padding: 6px 12px;
+            border-radius: 3px;
+            margin: 2px;
+        }}
+        
+        QMenuBar::item:selected {{
+            background-color: {theme['primary']};
+            color: white;
+        }}
+        
+        QMenuBar::item:hover {{
+            background-color: {theme['primary']};
+            color: white;
+        }}
+        
+        QMenuBar::item:pressed {{
+            background-color: {theme['primary']};
+            color: white;
+        }}
+        
+        QMenu {{
+            background-color: {theme['surface']};
+            color: {theme['text']};
+            border: 1px solid {theme['border']};
+            border-radius: 4px;
+        }}
+        
+        QMenu::item {{
+            background-color: transparent;
+            padding: 6px 20px;
+            border: none;
+            margin: 1px;
+            border-radius: 2px;
+        }}
+        
+        QMenu::item:selected {{
+            background-color: {theme['primary']};
+            color: white;
+        }}
+        
+        QMenu::item:hover {{
+            background-color: {theme['primary']};
+            color: white;
+        }}
+        
+        QMenu::separator {{
+            height: 1px;
+            background-color: {theme['border']};
+            margin: 2px 0px;
+        }}
+        
+        QMenu QMenu {{
+            background-color: {theme['surface']};
+            border: 1px solid {theme['border']};
+            border-radius: 4px;
+        }}
+        
+        QMenu QMenu::item {{
+            background-color: transparent;
+            padding: 6px 20px;
+            border: none;
+            margin: 1px;
+            border-radius: 2px;
+        }}
+        
+        QMenu QMenu::item:selected {{
+            background-color: {theme['primary']};
+            color: white;
+        }}
+        
+        QMenu QMenu::item:hover {{
+            background-color: {theme['primary']};
+            color: white;
+        }}
+        
+        QSplitter::handle {{
+            background-color: {theme['border']};
+            border: 1px solid {theme['border']};
+        }}
+        
+        QSplitter::handle:horizontal {{
+            width: 8px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {theme['surface']}, 
+                stop:0.5 {theme['border']}, 
+                stop:1 {theme['surface']});
+            border-left: 1px solid {theme['border']};
+            border-right: 1px solid {theme['border']};
+        }}
+        
+        QSplitter::handle:horizontal:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {theme['hover']}, 
+                stop:0.5 {theme['primary']}, 
+                stop:1 {theme['hover']});
+        }}
+        
+        QSplitter::handle:vertical {{
+            height: 8px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {theme['surface']}, 
+                stop:0.5 {theme['border']}, 
+                stop:1 {theme['surface']});
+            border-top: 1px solid {theme['border']};
+            border-bottom: 1px solid {theme['border']};
+        }}
+        
+        QSplitter::handle:vertical:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {theme['hover']}, 
+                stop:0.5 {theme['primary']}, 
+                stop:1 {theme['hover']});
+        }}
+        
+        QGraphicsView {{
+            background-color: {theme['surface']};
+            border: 1px solid {theme['border']};
+            border-radius: 3px;
+        }}
+        """
+        
+        # 커스텀 타이틀 바 스타일 추가
+        title_bar_style = f"""
+        QWidget#titleBar {{
+            background-color: {theme['surface']};
+            border-bottom: 1px solid {theme['border']};
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+        }}
+        
+        QLabel#titleLabel {{
+            color: {theme['text']};
+            background-color: transparent;
+            font-weight: bold;
+            font-size: 14px;
+        }}
+        """
+        
+        style += title_bar_style
+        
+        self.setStyleSheet(style)
+        
+        # 타이틀 바 버튼 스타일 업데이트 (테마별 색상 적용)
+        if hasattr(self, 'minimize_btn'):
+            if theme_name in ["블루 네온", "핑크 네온"]:
+                # 네온 테마용 타이틀 바 버튼
+                button_style = f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border: 1px solid {theme['primary']};
+                        color: {theme['primary']};
+                        font-size: 12px;
+                        font-weight: bold;
+                        padding: 5px 8px;
+                        border-radius: 3px;
+                        margin: 2px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {theme['primary']};
+                        color: black;
+                    }}
+                """
+                
+                close_button_style = f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border: 1px solid #ff0040;
+                        color: #ff0040;
+                        font-size: 12px;
+                        font-weight: bold;
+                        padding: 5px 8px;
+                        border-radius: 3px;
+                        margin: 2px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: #ff0040;
+                        color: white;
+                    }}
+                """
+            else:
+                # 일반 테마용 타이틀 바 버튼
+                button_style = f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border: none;
+                        color: {theme['text']};
+                        font-size: 14px;
+                        font-weight: bold;
+                        padding: 5px 10px;
+                        border-radius: 0px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {theme['hover']};
+                    }}
+                """
+                
+                close_button_style = button_style + """
+                    QPushButton:hover {
+                        background-color: #e81123;
+                        color: white;
+                    }
+                """
+            
+            self.minimize_btn.setStyleSheet(button_style)
+            self.maximize_btn.setStyleSheet(button_style)
+            self.close_btn.setStyleSheet(close_button_style)
+            
+            # 메뉴 버튼도 동일한 스타일 적용
+            if hasattr(self, 'menu_btn'):
+                if theme_name in ["블루 네온", "핑크 네온"]:
+                    menu_button_style = f"""
+                        QPushButton {{
+                            background-color: transparent;
+                            border: 1px solid {theme['primary']};
+                            color: {theme['primary']};
+                            font-size: 14px;
+                            font-weight: bold;
+                            padding: 3px;
+                            border-radius: 3px;
+                            margin: 2px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: {theme['primary']};
+                            color: black;
+                        }}
+                    """
+                else:
+                    menu_button_style = f"""
+                        QPushButton {{
+                            background-color: transparent;
+                            border: none;
+                            color: {theme['text']};
+                            font-size: 16px;
+                            font-weight: bold;
+                            padding: 3px;
+                            border-radius: 0px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: {theme['hover']};
+                        }}
+                    """
+                self.menu_btn.setStyleSheet(menu_button_style)
+        
+        # 이미지 뷰포트 배경색 직접 설정
+        if hasattr(self, 'image_view'):
+            # QGraphicsView 배경 브러시 설정
+            background_color = QColor(theme['surface'])
+            self.image_view.setBackgroundBrush(QBrush(background_color))
+            
+            # 씬 배경색도 설정
+            if hasattr(self, 'image_scene'):
+                self.image_scene.setBackgroundBrush(QBrush(background_color))
+            
+            # 드롭 힌트 스타일 업데이트
+            self.image_view.update_drop_hint_style(theme)
+        
+        # 테마 액션 상태 업데이트 (theme_group이 있는 경우에만)
+        if hasattr(self, 'theme_group') and self.theme_group:
+            for action in self.theme_group.actions():
+                action.setChecked(action.text() == theme_name)
+        
+        # UI 설정에 테마 저장
+        self.save_ui_settings()
+        
+        print(f"[DEBUG] 테마 적용됨: {theme_name}")
+
+    def get_menu_style(self):
+        """현재 테마에 맞는 메뉴 스타일 반환"""
+        current_theme = getattr(self, 'current_theme', '어두운 모드')
+        theme = self.THEMES.get(current_theme, self.THEMES['어두운 모드'])
+        
+        return f"""
+            QMenu {{
+                background-color: {theme['surface']};
+                color: {theme['text']};
+                border: 1px solid {theme['border']};
+                border-radius: 4px;
+                padding: 4px;
+            }}
+            QMenu::item {{
+                background-color: transparent;
+                padding: 8px 20px;
+                border: none;
+                margin: 1px;
+                border-radius: 3px;
+            }}
+            QMenu::item:hover {{
+                background-color: {theme['primary']};
+                color: white;
+            }}
+            QMenu::item:selected {{
+                background-color: {theme['primary']};
+                color: white;
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background-color: {theme['border']};
+                margin: 4px 0px;
+            }}
+        """
+
+    def setup_shortcuts(self):
+        """단축키를 설정합니다."""
+        # Ctrl+S: 현재 페이지 저장
+        self.save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.save_shortcut.activated.connect(lambda: (
+            self.save_current_character(), 
+            QToolTip.showText(
+                self.save_button.mapToGlobal(self.save_button.rect().center()), 
+                "페이지가 저장되었습니다."
+            ) if hasattr(self, 'save_button') else None
+        ))
+        
+        # Ctrl+N: 새 페이지 추가
+        self.new_page_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
+        self.new_page_shortcut.activated.connect(self.add_character)
+        
+        # Ctrl+D: 페이지 복제
+        self.duplicate_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
+        self.duplicate_shortcut.activated.connect(self.duplicate_selected_character)
+        
+        # Delete: 페이지 삭제 (확인 필요)
+        self.delete_shortcut = QShortcut(QKeySequence("Delete"), self)
+        self.delete_shortcut.activated.connect(self.delete_selected_character)
+        
+        print("[DEBUG] 단축키 설정 완료")
+    
+    def setup_resize_handles(self):
+        """투명한 리사이즈 핸들들 설정"""
+        handle_size = 8  # 핸들 두께
+        corner_size = 15  # 모서리 핸들 크기
+        
+        # 8개 방향의 핸들 생성
+        directions = [
+            ('top', 0, 0, 0, handle_size),
+            ('bottom', 0, 0, 0, handle_size),
+            ('left', 0, 0, handle_size, 0),
+            ('right', 0, 0, handle_size, 0),
+            ('top-left', 0, 0, corner_size, corner_size),
+            ('top-right', 0, 0, corner_size, corner_size),
+            ('bottom-left', 0, 0, corner_size, corner_size),
+            ('bottom-right', 0, 0, corner_size, corner_size)
+        ]
+        
+        for direction, _, _, width, height in directions:
+            handle = ResizeHandle(direction, self)
+            if width > 0:
+                handle.setFixedWidth(width)
+            if height > 0:
+                handle.setFixedHeight(height)
+            self.resize_handles[direction] = handle
+            handle.show()
+        
+        # 초기 위치 설정
+        self.update_resize_handles()
+    
+    def update_resize_handles(self):
+        """리사이즈 핸들들의 위치 업데이트"""
+        if not hasattr(self, 'resize_handles'):
+            return
+            
+        rect = self.rect()
+        handle_size = 8
+        corner_size = 15
+        
+        # 최대화된 상태에서는 핸들 숨기기
+        visible = not self.isMaximized()
+        
+        for direction, handle in self.resize_handles.items():
+            handle.setVisible(visible)
+            if not visible:
+                continue
+                
+            if direction == 'top':
+                handle.setGeometry(corner_size, 0, rect.width() - 2 * corner_size, handle_size)
+            elif direction == 'bottom':
+                handle.setGeometry(corner_size, rect.height() - handle_size, 
+                                 rect.width() - 2 * corner_size, handle_size)
+            elif direction == 'left':
+                handle.setGeometry(0, corner_size, handle_size, rect.height() - 2 * corner_size)
+            elif direction == 'right':
+                handle.setGeometry(rect.width() - handle_size, corner_size, 
+                                 handle_size, rect.height() - 2 * corner_size)
+            elif direction == 'top-left':
+                handle.setGeometry(0, 0, corner_size, corner_size)
+            elif direction == 'top-right':
+                handle.setGeometry(rect.width() - corner_size, 0, corner_size, corner_size)
+            elif direction == 'bottom-left':
+                handle.setGeometry(0, rect.height() - corner_size, corner_size, corner_size)
+            elif direction == 'bottom-right':
+                handle.setGeometry(rect.width() - corner_size, rect.height() - corner_size, 
+                                 corner_size, corner_size)
+
+    def setup_theme_actions(self):
+        """테마 액션들을 미리 설정"""
+        for theme_name in self.THEMES.keys():
+            theme_action = QAction(theme_name, self)
+            theme_action.setCheckable(True)
+            theme_action.triggered.connect(lambda checked, name=theme_name: self.apply_theme(name))
+            self.theme_group.addAction(theme_action)
+            
+            # 현재 테마 설정
+            if theme_name == self.current_theme:
+                theme_action.setChecked(True)
+
+    def setup_custom_title_bar(self, main_layout):
+        """커스텀 타이틀 바 설정"""
+        # 타이틀 바 위젯
+        self.title_bar = QWidget()
+        self.title_bar.setFixedHeight(35)
+        self.title_bar.setObjectName("titleBar")
+        
+        title_layout = QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(10, 0, 5, 0)
+        title_layout.setSpacing(5)
+        
+        # 메뉴 버튼 (햄버거 메뉴)
+        self.menu_btn = QPushButton("☰")
+        self.menu_btn.setFixedSize(30, 25)
+        self.menu_btn.setToolTip("메뉴")
+        self.menu_btn.clicked.connect(self.show_main_menu)
+        
+        # 타이틀 텍스트
+        self.title_label = QLabel("프롬프트 북")
+        self.title_label.setObjectName("titleLabel")
+        self.title_label.setAlignment(Qt.AlignCenter)  # 중앙정렬 추가
+        self.title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        
+        # 윈도우 컨트롤 버튼들
+        self.minimize_btn = QPushButton("－")
+        self.maximize_btn = QPushButton("□")
+        self.close_btn = QPushButton("✕")
+        
+        # 버튼 스타일 설정
+        button_style = """
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 5px 10px;
+                border-radius: 0px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 20);
+            }
+        """
+        
+        close_button_style = button_style + """
+            QPushButton:hover {
+                background-color: #e81123;
+                color: white;
+            }
+        """
+        
+        self.minimize_btn.setStyleSheet(button_style)
+        self.maximize_btn.setStyleSheet(button_style)
+        self.close_btn.setStyleSheet(close_button_style)
+        
+        # 버튼 기능 연결
+        self.minimize_btn.clicked.connect(self.showMinimized)
+        self.maximize_btn.clicked.connect(self.toggle_maximize)
+        self.close_btn.clicked.connect(self.close)
+        
+        # 레이아웃에 추가 (타이틀 중앙정렬)
+        title_layout.addWidget(self.menu_btn)
+        title_layout.addStretch()  # 왼쪽 stretch
+        title_layout.addWidget(self.title_label)
+        title_layout.addStretch()  # 오른쪽 stretch
+        title_layout.addWidget(self.minimize_btn)
+        title_layout.addWidget(self.maximize_btn)
+        title_layout.addWidget(self.close_btn)
+        
+        # 메인 레이아웃에 타이틀 바 추가
+        main_layout.addWidget(self.title_bar)
+    
+    def toggle_maximize(self):
+        """윈도우 최대화/복원 토글"""
+        if self.isMaximized():
+            self.showNormal()
+            self.maximize_btn.setText("□")
+        else:
+            self.showMaximized()
+            self.maximize_btn.setText("❐")
+        
+        # 핸들 상태 업데이트
+        self.update_resize_handles()
+    
+    def mousePressEvent(self, event):
+        """마우스 프레스 이벤트 - 타이틀바에서만 드래그 허용"""
+        if event.button() == Qt.LeftButton:
+            pos = event.position().toPoint()
+            
+            # 타이틀바 영역에서만 드래그 시작 허용
+            if hasattr(self, 'title_bar') and self.title_bar:
+                title_bar_global_pos = self.title_bar.mapFromGlobal(event.globalPosition().toPoint())
+                if self.title_bar.rect().contains(title_bar_global_pos):
+                    self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                    event.accept()
+                    return
+            
+            # 리사이즈는 투명 핸들에서만 처리하도록 함
+            # 기존 마우스 이벤트 기반 리사이즈는 비활성화
+            event.ignore()
+    
+    def mouseMoveEvent(self, event):
+        """마우스 무브 이벤트 - 타이틀바 드래그만 처리"""
+        # 타이틀바 드래그 중인 경우만 처리
+        if event.buttons() == Qt.LeftButton and self.drag_position is not None:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+            return
+        
+        # 리사이즈와 커서 변경은 투명 핸들에서 처리하므로 여기서는 제거
+    
+    def mouseReleaseEvent(self, event):
+        """마우스 릴리즈 이벤트 - 드래그 종료"""
+        self.drag_position = None
+    
+    def leaveEvent(self, event):
+        """마우스가 윈도우를 벗어날 때"""
+        super().leaveEvent(event)
+    
+
+    
+
+    
+    def mouseDoubleClickEvent(self, event):
+        """더블클릭으로 최대화/복원"""
+        if event.button() == Qt.LeftButton and self.title_bar.rect().contains(
+            self.title_bar.mapFromGlobal(event.globalPosition().toPoint())
+        ):
+            self.toggle_maximize()
+            event.accept()
+    
+    def resizeEvent(self, event):
+        """리사이즈 이벤트 - 둥근 모서리 마스크 적용 및 핸들 위치 업데이트"""
+        super().resizeEvent(event)
+        self.apply_rounded_corners()
+        self.update_resize_handles()
+    
+    def showEvent(self, event):
+        """쇼 이벤트 - 초기 둥근 모서리 적용"""
+        super().showEvent(event)
+        self.apply_rounded_corners()
+    
+    def changeEvent(self, event):
+        """윈도우 상태 변경 이벤트 - 핸들 상태 업데이트"""
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange:
+            # 핸들 상태 업데이트
+            self.update_resize_handles()
+    
+    def apply_rounded_corners(self):
+        """윈도우에 둥근 모서리 마스크 적용"""
+        # 윈도우 크기 가져오기
+        rect = self.rect()
+        
+        # 둥근 사각형 경로 생성
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), self.border_radius, self.border_radius)
+        
+        # 경로를 QRegion으로 변환
+        region = QRegion(path.toFillPolygon().toPolygon())
+        
+        # 윈도우 마스크 설정
+        self.setMask(region)
+    
+    def show_main_menu(self):
+        """메인 메뉴 표시"""
+        menu = QMenu(self)
+        
+        # 메뉴 스타일 적용
+        menu_style = self.get_menu_style()
+        menu.setStyleSheet(menu_style)
+        
+        # 파일 메뉴
+        file_menu = menu.addMenu("📁 파일")
+        file_menu.setStyleSheet(menu_style)  # 서브메뉴에도 적용
+        
+        # 선택된 북 저장하기
+        save_book_action = QAction("💾 선택된 북 저장하기", self)
+        save_book_action.triggered.connect(self.save_selected_book)
+        file_menu.addAction(save_book_action)
+        
+        # 저장된 북 불러오기
+        load_book_action = QAction("📂 저장된 북 불러오기", self)
+        load_book_action.triggered.connect(self.load_saved_book)
+        file_menu.addAction(load_book_action)
+        
+        # 테마 메뉴
+        theme_menu = menu.addMenu("🎨 테마")
+        theme_menu.setStyleSheet(menu_style)  # 서브메뉴에도 적용
+        
+        # 미리 생성된 테마 액션들을 메뉴에 추가
+        for action in self.theme_group.actions():
+            theme_menu.addAction(action)
+            # 현재 테마 체크 상태 업데이트
+            if action.text() == self.current_theme:
+                action.setChecked(True)
+            else:
+                action.setChecked(False)
+        
+        # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
+        button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
+        menu.exec_(button_pos)
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = PromptBook()
-
-    from PySide6.QtGui import QShortcut, QKeySequence
-    QShortcut(QKeySequence("Ctrl+S"), window).activated.connect(lambda: (window.save_current_character(), QToolTip.showText(window.save_button.mapToGlobal(window.save_button.rect().center()), "페이지가 저장되었습니다.")))
-
     window.show()
     sys.exit(app.exec())
