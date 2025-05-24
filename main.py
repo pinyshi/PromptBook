@@ -931,6 +931,7 @@ class PromptBook(QMainWindow):
             print(f"[DEBUG] 현재 북 '{self.current_book}'이(가) books에 없음")
 
     def add_book(self):
+        print("[DEBUG] add_book 메서드 호출됨")  # 디버그 추가
         base_name = "새 북"
         existing_names = {self.extract_book_name(self.book_list.item(i).text()) 
                         for i in range(self.book_list.count())}
@@ -945,27 +946,43 @@ class PromptBook(QMainWindow):
                     unique_name = candidate
                     break
 
+        print(f"[DEBUG] 새 북 이름: {unique_name}")  # 디버그 추가
+        
         # 새 북 데이터 생성
         self.state.books[unique_name] = {
             "emoji": "📕",
             "pages": []
         }
+        print(f"[DEBUG] 새 북 데이터 생성 완료, 현재 북 수: {len(self.state.books)}")  # 디버그 추가
         
         # 리스트에 아이템 추가
         item = QListWidgetItem(f"📕 {unique_name}")
         item.setData(Qt.UserRole, unique_name)
         item.setFlags(item.flags() | Qt.ItemIsEditable)
         self.book_list.addItem(item)
+        print(f"[DEBUG] 북 리스트에 아이템 추가 완료")  # 디버그 추가
         
         # 현재 정렬 모드가 커스텀이 아니면 정렬 적용
         if hasattr(self, 'book_sort_selector') and not self.book_sort_custom:
             self.handle_book_sort()
+            # 정렬 후 새로 생성된 아이템 찾기
+            item = None
+            for i in range(self.book_list.count()):
+                book_item = self.book_list.item(i)
+                if book_item.data(Qt.UserRole) == unique_name:
+                    item = book_item
+                    break
         
         # 새로 추가된 북 선택
-        self.book_list.setCurrentItem(item)
-        self.on_book_selected(self.book_list.row(item))
+        if item:
+            self.book_list.setCurrentItem(item)
+            self.on_book_selected(self.book_list.row(item))
+            print(f"[DEBUG] 새 북 선택 완료")  # 디버그 추가
+        else:
+            print(f"[DEBUG] 새 북 아이템을 찾을 수 없음")  # 디버그 추가
         
         self.save_to_file()
+        print(f"[DEBUG] add_book 완료")  # 디버그 추가
 
     def add_character(self):
         if not self.current_book:
