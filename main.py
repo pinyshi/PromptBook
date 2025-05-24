@@ -3466,11 +3466,24 @@ class PromptBook(QMainWindow):
                 padding: 0 10px;
             }
         """)
+
+        # Donate 버튼
+        self.donate_btn = QPushButton("💖 Donate")
+        self.donate_btn.setToolTip("카카오페이로 후원해주세요!")
+        self.donate_btn.clicked.connect(self.show_kakao_info)
         
         # 윈도우 컨트롤 버튼들
         self.minimize_btn = QPushButton("－")
+        self.minimize_btn.clicked.connect(self.showMinimized)
+        self.minimize_btn.setToolTip("최소화")
+        
         self.maximize_btn = QPushButton("□")
+        self.maximize_btn.clicked.connect(self.toggle_maximize)
+        self.maximize_btn.setToolTip("최대화")
+        
         self.close_btn = QPushButton("✕")
+        self.close_btn.clicked.connect(self.close)
+        self.close_btn.setToolTip("닫기")
         
         # 버튼 스타일 설정
         button_style = """
@@ -3479,12 +3492,10 @@ class PromptBook(QMainWindow):
                 border: none;
                 color: white;
                 font-size: 14px;
-                font-weight: bold;
                 padding: 5px 10px;
-                border-radius: 0px;
             }
             QPushButton:hover {
-                background-color: rgba(255, 255, 255, 20);
+                background-color: rgba(255, 255, 255, 0.1);
             }
         """
         
@@ -3495,25 +3506,21 @@ class PromptBook(QMainWindow):
             }
         """
         
+        self.donate_btn.setStyleSheet(button_style)
         self.minimize_btn.setStyleSheet(button_style)
         self.maximize_btn.setStyleSheet(button_style)
         self.close_btn.setStyleSheet(close_button_style)
         
-        # 버튼 기능 연결
-        self.minimize_btn.clicked.connect(self.showMinimized)
-        self.maximize_btn.clicked.connect(self.toggle_maximize)
-        self.close_btn.clicked.connect(self.close)
-        
-        # 레이아웃에 추가 (타이틀 중앙정렬)
+        # 레이아웃에 위젯 추가
         title_layout.addWidget(self.menu_btn)
-        title_layout.addStretch()  # 왼쪽 stretch
+        title_layout.addStretch()  # 왼쪽 여백
         title_layout.addWidget(self.title_label)
-        title_layout.addStretch()  # 오른쪽 stretch
+        title_layout.addStretch()  # 오른쪽 여백
+        title_layout.addWidget(self.donate_btn)
         title_layout.addWidget(self.minimize_btn)
         title_layout.addWidget(self.maximize_btn)
         title_layout.addWidget(self.close_btn)
         
-        # 메인 레이아웃에 타이틀 바 추가
         main_layout.addWidget(self.title_bar)
     
     def toggle_maximize(self):
@@ -3646,6 +3653,172 @@ class PromptBook(QMainWindow):
         # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
         button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
         menu.exec_(button_pos)
+
+    def show_donate_options(self):
+        """후원 옵션 메뉴 표시"""
+        menu = QMenu(self)
+        
+        # 메뉴 스타일 적용
+        menu_style = self.get_menu_style()
+        menu.setStyleSheet(menu_style)
+        
+        # 후원 옵션들
+        paypal_action = QAction("💳 PayPal", self)
+        paypal_action.triggered.connect(lambda: self.open_url("https://paypal.me/qohqohqoh"))
+        menu.addAction(paypal_action)
+        
+        menu.addSeparator()
+        
+        # 국내 후원 옵션
+        kakao_action = QAction("💛 카카오페이", self)
+        kakao_action.triggered.connect(self.show_kakao_info)
+        menu.addAction(kakao_action)
+        
+        # 메뉴 표시 위치 계산
+        button_pos = self.donate_btn.mapToGlobal(self.donate_btn.rect().bottomLeft())
+        menu.exec_(button_pos)
+    
+    def open_url(self, url):
+        """URL을 기본 브라우저에서 열기"""
+        import webbrowser
+        webbrowser.open(url)
+    
+    def show_kakao_info(self):
+        """카카오페이 QR코드 팝업창 표시"""
+        import os
+        
+        image_path = "KakaoPay.png"
+        
+        if not os.path.exists(image_path):
+            QMessageBox.warning(
+                self, 
+                "카카오페이 QR코드", 
+                f"QR코드 이미지 파일을 찾을 수 없습니다.\n경로: {image_path}\n\n파일을 확인해주세요! 💛"
+            )
+            return
+        
+        # 커스텀 팝업 다이얼로그 생성
+        dialog = QDialog(self)
+        dialog.setWindowTitle("💛 카카오페이 후원")
+        dialog.setModal(True)
+        dialog.setFixedSize(400, 550)
+        
+        # 윈도우 플래그 설정으로 떨림 방지
+        dialog.setWindowFlags(Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint)
+        
+        # 렌더링 최적화 속성 설정
+        dialog.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        dialog.setAttribute(Qt.WA_NoSystemBackground, False)
+        dialog.setAttribute(Qt.WA_StaticContents, True)
+        
+        # 현재 테마 적용
+        current_theme = getattr(self, 'current_theme', '어두운 모드')
+        theme = self.THEMES.get(current_theme, self.THEMES['어두운 모드'])
+        
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {theme['background']};
+                color: {theme['text']};
+                border: 2px solid {theme['border']};
+                border-radius: 10px;
+            }}
+            QLabel {{
+                color: {theme['text']};
+                background-color: transparent;
+            }}
+            QPushButton {{
+                background-color: {theme['button']};
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 8px 16px;
+                border-radius: 5px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {theme['button_hover']};
+            }}
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 메시지 라벨
+        message_label = QLabel()
+        message_label.setText(
+            
+            "주기적인 카페인 주입이 필요합니다.☕"
+        )
+        message_label.setAlignment(Qt.AlignCenter)
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet("font-size: 14px; padding: 10px;")
+        layout.addWidget(message_label)
+        
+        # QR코드 이미지 표시
+        try:
+            # 고품질 이미지 리더 사용
+            reader = QImageReader(image_path)
+            reader.setAutoTransform(True)
+            reader.setQuality(100)
+            
+            # 고품질 이미지 로드
+            image = reader.read()
+            if not image.isNull():
+                # 고품질 픽스맵 생성
+                pixmap = QPixmap.fromImage(image, Qt.PreferDither | Qt.AutoColor)
+                
+                # 이미지 크기 조정 (최대 300x300, 고품질 스케일링)
+                scaled_pixmap = pixmap.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                
+                image_label = QLabel()
+                image_label.setPixmap(scaled_pixmap)
+                image_label.setAlignment(Qt.AlignCenter)
+                image_label.setMinimumSize(310, 310)  # 고정 크기로 레이아웃 안정화
+                image_label.setMaximumSize(310, 310)
+                image_label.setScaledContents(False)  # 자동 스케일링 비활성화
+                
+                # 이미지 캐싱 및 렌더링 최적화
+                image_label.setAttribute(Qt.WA_OpaquePaintEvent, True)
+                image_label.setAttribute(Qt.WA_NoSystemBackground, False)
+                
+                image_label.setStyleSheet("""
+                    QLabel {
+                        border: 2px solid #cccccc; 
+                        border-radius: 5px; 
+                        padding: 5px; 
+                        background-color: white;
+                        qproperty-alignment: AlignCenter;
+                    }
+                """)
+                
+                # 이미지를 중앙정렬하여 레이아웃에 추가
+                image_layout = QHBoxLayout()
+                image_layout.addStretch()
+                image_layout.addWidget(image_label)
+                image_layout.addStretch()
+                layout.addLayout(image_layout)
+            else:
+                error_label = QLabel("QR코드 이미지를 불러올 수 없습니다.")
+                error_label.setAlignment(Qt.AlignCenter)
+                layout.addWidget(error_label)
+        except Exception as e:
+            error_label = QLabel(f"이미지 로드 오류: {str(e)}")
+            error_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(error_label)
+        
+        # 감사 메시지
+        thanks_label = QLabel("💖 후원해주셔서 정말 감사합니다! 💖")
+        thanks_label.setAlignment(Qt.AlignCenter)
+        thanks_label.setStyleSheet("font-weight: bold; font-size: 12px; color: #ff6b9d;")
+        layout.addWidget(thanks_label)
+        
+        # 닫기 버튼
+        close_button = QPushButton("닫기")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        
+        # 다이얼로그 표시
+        dialog.exec()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
