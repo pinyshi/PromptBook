@@ -654,6 +654,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
+    VERSION = "v2.0.0.2"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
