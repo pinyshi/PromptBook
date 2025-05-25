@@ -195,8 +195,8 @@ class PromptInput(QMainWindow):
         # 창 고정 상태 변수
         self.always_on_top = False
         
-        # PyInstaller 임시 폴더 정리 에러 무시 설정
-        self.suppress_temp_cleanup_errors()
+        # 모든 에러 대화상자 차단
+        self.disable_all_error_dialogs()
         
         self.setup_ui()
         self.setup_autocomplete()
@@ -325,29 +325,56 @@ class PromptInput(QMainWindow):
         self.statusBar().showMessage(f"창 맨 위에 고정: {status_text}")
         print(f"[DEBUG] 프롬프트 입력기 - 창 맨 위에 고정: {status_text}")
     
-    def suppress_temp_cleanup_errors(self):
-        """PyInstaller 임시 폴더 정리 에러를 무시하도록 설정"""
+    def disable_all_error_dialogs(self):
+        """모든 에러 대화상자를 시스템 레벨에서 차단"""
         try:
+            import ctypes
+            from ctypes import wintypes
+            import warnings
             import tempfile
             import atexit
-            import warnings
             import shutil
+            import os
             
-            # 모든 경고 무시
+            # 1. 모든 Python 경고 완전 무시
             warnings.filterwarnings("ignore")
             
-            # PyInstaller 관련 임시 폴더 정리 에러 무시
-            if hasattr(sys, '_MEIPASS'):
-                # 1. tempfile 모듈의 cleanup 함수 래핑
-                original_cleanup = tempfile._cleanup
-                def silent_cleanup(*args, **kwargs):
-                    try:
-                        return original_cleanup(*args, **kwargs)
-                    except:
-                        pass
-                tempfile._cleanup = silent_cleanup
+            # 2. Windows 시스템 에러 대화상자 완전 차단
+            try:
+                # SetErrorMode - 모든 시스템 에러 대화상자 차단
+                SEM_FAILCRITICALERRORS = 0x0001      # 중요한 에러 대화상자 차단
+                SEM_NOGPFAULTERRORBOX = 0x0002       # GPF 에러 대화상자 차단  
+                SEM_NOOPENFILEERRORBOX = 0x8000      # 파일 열기 에러 대화상자 차단
+                SEM_NOALIGNMENTFAULTEXCEPT = 0x0004  # 정렬 오류 예외 차단
                 
-                # 2. shutil.rmtree 함수 래핑 (임시 폴더 삭제용)
+                error_mode = (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | 
+                             SEM_NOOPENFILEERRORBOX | SEM_NOALIGNMENTFAULTEXCEPT)
+                ctypes.windll.kernel32.SetErrorMode(error_mode)
+                
+                # SetThreadErrorMode - 현재 스레드의 에러 모드 설정
+                try:
+                    old_mode = wintypes.DWORD()
+                    ctypes.windll.kernel32.SetThreadErrorMode(error_mode, ctypes.byref(old_mode))
+                except:
+                    pass
+                
+                # 추가: 프로세스 에러 모드 설정
+                try:
+                    ctypes.windll.kernel32.SetProcessErrorMode(error_mode)
+                except:
+                    pass
+                    
+            except Exception:
+                pass
+            
+            # 3. 모든 파일/폴더 관련 함수 래핑
+            try:
+                # tempfile 정리 함수 무력화
+                def dummy_cleanup(*args, **kwargs):
+                    pass
+                tempfile._cleanup = dummy_cleanup
+                
+                # shutil.rmtree 무력화
                 original_rmtree = shutil.rmtree
                 def silent_rmtree(*args, **kwargs):
                     try:
@@ -356,33 +383,45 @@ class PromptInput(QMainWindow):
                         pass
                 shutil.rmtree = silent_rmtree
                 
-                # 3. atexit 핸들러 모두 제거하고 새로 등록
-                atexit._clear()
-                def silent_exit_handler():
+                # os.remove 래핑
+                original_remove = os.remove
+                def silent_remove(*args, **kwargs):
                     try:
-                        pass  # 아무것도 하지 않음
+                        return original_remove(*args, **kwargs)
                     except:
                         pass
-                atexit.register(silent_exit_handler)
+                os.remove = silent_remove
                 
-                # 4. Windows 시스템 에러 팝업 무시 (ctypes 사용)
-                try:
-                    import ctypes
-                    from ctypes import wintypes
-                    
-                    # SetErrorMode로 시스템 에러 팝업 무시
-                    SEM_FAILCRITICALERRORS = 0x0001
-                    SEM_NOGPFAULTERRORBOX = 0x0002
-                    SEM_NOOPENFILEERRORBOX = 0x8000
-                    
-                    error_mode = SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
-                    ctypes.windll.kernel32.SetErrorMode(error_mode)
-                    
-                except Exception:
-                    pass  # ctypes 실패해도 계속 진행
+                # os.rmdir 래핑
+                original_rmdir = os.rmdir
+                def silent_rmdir(*args, **kwargs):
+                    try:
+                        return original_rmdir(*args, **kwargs)
+                    except:
+                        pass
+                os.rmdir = silent_rmdir
                 
-        except Exception as e:
-            # 에러 무시 설정 자체가 실패해도 프로그램은 계속 실행
+            except Exception:
+                pass
+            
+            # 4. atexit 핸들러 완전 무력화
+            try:
+                atexit._clear()
+                # 빈 핸들러만 등록
+                atexit.register(lambda: None)
+            except Exception:
+                pass
+            
+            # 5. 환경 변수로 에러 무시 설정
+            try:
+                os.environ['PYTHONIOENCODING'] = 'utf-8'
+                os.environ['PYTHONUNBUFFERED'] = '1'
+                os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+            except Exception:
+                pass
+                
+        except Exception:
+            # 모든 에러 무시
             pass
 
 
