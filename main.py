@@ -7,6 +7,22 @@ from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
 import os, json, csv, shutil, sys
 
+def get_app_directory():
+    """실행 파일의 디렉토리를 반환합니다."""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller로 빌드된 exe 파일인 경우
+        return os.path.dirname(sys.executable)
+    else:
+        # 개발 환경에서 실행하는 경우
+        return os.path.dirname(os.path.abspath(__file__))
+
+def get_images_directory():
+    """이미지 저장 디렉토리의 절대 경로를 반환합니다."""
+    app_dir = get_app_directory()
+    images_dir = os.path.join(app_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    return images_dir
+
 # AI 테스터 모듈 import (개발 중)
 # try:
 #     from ai_tester import AITesterDialog
@@ -2716,17 +2732,17 @@ class PromptBook(QMainWindow):
                 full_path = os.path.join(temp_dir, rel_path)
                 if os.path.exists(full_path):
                     # images 폴더 생성
-                    os.makedirs("images", exist_ok=True)
+                    images_dir = get_images_directory()
                     # 고유한 파일명 생성
                     dest_filename = f"{book_name}_{os.path.basename(full_path)}"
-                    dest_path = os.path.join("images", dest_filename)
+                    dest_path = os.path.join(images_dir, dest_filename)
                     
                     # 파일명 중복 방지
                     counter = 1
                     while os.path.exists(dest_path):
                         name, ext = os.path.splitext(dest_filename)
                         dest_filename = f"{name}_{counter}{ext}"
-                        dest_path = os.path.join("images", dest_filename)
+                        dest_path = os.path.join(images_dir, dest_filename)
                         counter += 1
                     
                     shutil.copy(full_path, dest_path)
@@ -2809,17 +2825,17 @@ class PromptBook(QMainWindow):
                 full_path = os.path.join(temp_dir, rel_path)
                 if os.path.exists(full_path):
                     # images 폴더 생성
-                    os.makedirs("images", exist_ok=True)
+                    images_dir = get_images_directory()
                     # 고유한 파일명 생성
                     dest_filename = f"{book_name}_{os.path.basename(full_path)}"
-                    dest_path = os.path.join("images", dest_filename)
+                    dest_path = os.path.join(images_dir, dest_filename)
                     
                     # 파일명 중복 방지
                     counter = 1
                     while os.path.exists(dest_path):
                         name, ext = os.path.splitext(dest_filename)
                         dest_filename = f"{name}_{counter}{ext}"
-                        dest_path = os.path.join("images", dest_filename)
+                        dest_path = os.path.join(images_dir, dest_filename)
                         counter += 1
                     
                     shutil.copy(full_path, dest_path)
@@ -2949,17 +2965,17 @@ class PromptBook(QMainWindow):
                     full_path = os.path.join(temp_dir, rel_path)
                     if os.path.exists(full_path):
                         # images 폴더 생성
-                        os.makedirs("images", exist_ok=True)
+                        images_dir = get_images_directory()
                         # 고유한 파일명 생성
                         dest_filename = f"{book_name}_{os.path.basename(full_path)}"
-                        dest_path = os.path.join("images", dest_filename)
+                        dest_path = os.path.join(images_dir, dest_filename)
                         
                         # 파일명 중복 방지
                         counter = 1
                         while os.path.exists(dest_path):
                             name, ext = os.path.splitext(dest_filename)
                             dest_filename = f"{name}_{counter}{ext}"
-                            dest_path = os.path.join("images", dest_filename)
+                            dest_path = os.path.join(images_dir, dest_filename)
                             counter += 1
                         
                         shutil.copy(full_path, dest_path)
@@ -6197,7 +6213,7 @@ class PromptBook(QMainWindow):
             return
             
         # images 폴더가 존재하지 않으면 아무것도 안 함
-        images_dir = "images"
+        images_dir = get_images_directory()
         if not os.path.exists(images_dir):
             return
         
@@ -6283,7 +6299,7 @@ class PromptBook(QMainWindow):
             
         try:
             # images 폴더가 존재하지 않으면 아무것도 안 함
-            images_dir = "images"
+            images_dir = get_images_directory()
             if not os.path.exists(images_dir):
                 return
             
