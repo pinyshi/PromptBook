@@ -714,7 +714,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.1.4"
+    VERSION = "v2.1.5"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -1882,16 +1882,17 @@ class PromptBook(QMainWindow):
 
     def on_character_clicked(self, item):
         print("[DEBUG] on_character_clicked 호출됨")
-        index = self.char_list.row(item)
-        print(f"[DEBUG] 클릭된 인덱스: {index}")
+        selected_pages = self.char_list.selectedItems()
+        clicked_name = item.data(Qt.UserRole)
+        print(f"[DEBUG] 클릭된 아이템: {clicked_name}")
+        print(f"[DEBUG] 클릭 후 선택된 페이지 수: {len(selected_pages)}")
         
-        # 다중 선택 상태인지 확인
-        selected_items = self.char_list.selectedItems()
-        if len(selected_items) > 1:
-            print(f"[DEBUG] 다중 선택 상태 ({len(selected_items)}개) - 단일 선택 처리 건너뜀")
-            return
+        # 클릭된 아이템이 실제로 선택되어 있는지 확인
+        is_clicked_item_selected = item in selected_pages
+        print(f"[DEBUG] 클릭된 아이템이 선택되어 있나? {is_clicked_item_selected}")
         
-        self.on_character_selected(index)
+        # itemSelectionChanged가 모든 선택 처리를 담당하므로 여기서는 아무것도 하지 않음
+        print("[DEBUG] itemSelectionChanged 신호에서 처리하므로 여기서는 아무것도 안함")
     
     def on_book_selection_changed(self):
         """북 선택 변경 시 호출 (다중 선택 감지용)"""
@@ -1927,7 +1928,13 @@ class PromptBook(QMainWindow):
     
     def on_character_selection_changed(self):
         """페이지 선택 변경 시 호출 (다중 선택 감지용)"""
+        # 약간의 지연을 두어 모든 선택 변경이 완료된 후 처리
+        QTimer.singleShot(10, self._handle_selection_change)
+    
+    def _handle_selection_change(self):
+        """실제 선택 변경 처리"""
         selected_pages = self.char_list.selectedItems()
+        print(f"[DEBUG] _handle_selection_change: 선택된 페이지 수={len(selected_pages)}")
         
         if len(selected_pages) > 1:
             # 다중 선택된 경우 - 내용 포커싱 안하기
@@ -1951,9 +1958,70 @@ class PromptBook(QMainWindow):
             self.update_image_buttons_state()
         elif len(selected_pages) == 1:
             # 단일 선택으로 돌아온 경우
-            current_item = selected_pages[0]
-            index = self.char_list.row(current_item)
-            self.on_character_selected(index)
+            print("[DEBUG] 단일 선택으로 내용 로드")
+            # 선택된 아이템만 사용 (currentItem 완전히 무시)
+            selected_item = selected_pages[0]
+            name = selected_item.data(Qt.UserRole)
+            print(f"[DEBUG] 선택된 아이템 이름: {name}")
+            
+            # characters 리스트에서 해당 페이지 찾기
+            for i, char in enumerate(self.state.characters):
+                if char.get("name") == name:
+                    print(f"[DEBUG] 페이지 데이터 찾음 - 인덱스: {i}")
+                    self.current_index = i
+                    
+                    # 입력 필드 업데이트
+                    if hasattr(self, 'name_input'):
+                        self.name_input.setText(char.get("name", ""))
+                    if hasattr(self, 'tag_input'):
+                        self.tag_input.setText(char.get("tags", ""))
+                    if hasattr(self, 'desc_input'):
+                        self.desc_input.setPlainText(char.get("desc", ""))
+                    if hasattr(self, 'prompt_input'):
+                        self.prompt_input.setPlainText(char.get("prompt", ""))
+                    
+                    # 잠금 상태 표시
+                    if hasattr(self, 'lock_checkbox'):
+                        is_locked = char.get('locked', False)
+                        self.lock_checkbox.setChecked(is_locked)
+                        self.lock_checkbox.setEnabled(True)
+                        
+                        # 체크박스 텍스트 업데이트
+                        if is_locked:
+                            self.lock_checkbox.setText("🔒 페이지 잠금")
+                        else:
+                            self.lock_checkbox.setText("🔓 페이지 잠금")
+                    
+                    # 이미지 업데이트
+                    if "image_path" in char and os.path.exists(char["image_path"]):
+                        self.update_image_view(char["image_path"])
+                    else:
+                        self.image_scene.clear()
+                        self.image_view.update_drop_hint_visibility()
+                    
+                    self.update_all_buttons_state()
+                    self.update_image_buttons_state()
+                    break
+        elif len(selected_pages) == 0:
+            # 모든 선택 해제된 경우 - 내용 비우기
+            self.current_index = -1
+            if hasattr(self, 'name_input'):
+                self.name_input.clear()
+            if hasattr(self, 'tag_input'):
+                self.tag_input.clear()
+            if hasattr(self, 'desc_input'):
+                self.desc_input.clear()
+            if hasattr(self, 'prompt_input'):
+                self.prompt_input.clear()
+            if hasattr(self, 'lock_checkbox'):
+                self.lock_checkbox.setChecked(False)
+                self.lock_checkbox.setText("🔓 페이지 잠금")
+                self.lock_checkbox.setEnabled(False)
+            self.image_scene.clear()
+            self.image_view.update_drop_hint_visibility()
+            
+            self.update_all_buttons_state()
+            self.update_image_buttons_state()
 
     def handle_character_sort(self):
         mode = self.sort_selector.currentText()
@@ -4534,7 +4602,6 @@ class PromptBook(QMainWindow):
                     ("Ctrl + 클릭", "개별 항목을 하나씩 선택/해제"),
                     ("Shift + 클릭", "첫 선택부터 클릭 위치까지 범위 선택"),
                     ("Ctrl + A", "모든 항목 선택 (리스트 포커스 시)"),
-                    ("Esc", "선택 해제"),
                 ]
             },
             {
