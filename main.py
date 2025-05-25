@@ -6181,7 +6181,11 @@ class PromptBook(QMainWindow):
         """카카오페이 QR코드 팝업창 표시"""
         import os
         
-        image_path = "KakaoPay.png"
+        # PyInstaller 환경에서는 임시 폴더에서 찾기
+        if getattr(sys, 'frozen', False):
+            image_path = os.path.join(sys._MEIPASS, "KakaoPay.png")
+        else:
+            image_path = "KakaoPay.png"
         
         if not os.path.exists(image_path):
             QMessageBox.warning(
