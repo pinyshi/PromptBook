@@ -435,8 +435,20 @@ class BookList(QListWidget):
         # 내부 항목 이동인 경우만 처리
         if event.source() == self:
             super().dropEvent(event)
+            # 다중 선택 이동 시 북 순서 업데이트
+            self.update_book_order()
         else:
             event.ignore()
+    
+    def update_book_order(self):
+        """북 순서 업데이트"""
+        # 부모 PromptBook 인스턴스 찾기
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, 'handle_book_reorder'):
+                parent.handle_book_reorder()
+                break
+            parent = parent.parent()
 
 class CharacterList(QListWidget):
     def __init__(self, parent=None):
@@ -454,8 +466,20 @@ class CharacterList(QListWidget):
         # 내부 항목 이동인 경우만 처리
         if event.source() == self:
             super().dropEvent(event)
+            # 다중 선택 이동 시 페이지 순서 업데이트
+            self.update_character_order()
         else:
             event.ignore()
+    
+    def update_character_order(self):
+        """페이지 순서 업데이트"""
+        # 부모 PromptBook 인스턴스 찾기
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, 'on_character_reordered'):
+                parent.on_character_reordered()
+                break
+            parent = parent.parent()
 
 class CustomSplitterHandle(QSplitterHandle):
     def __init__(self, orientation, parent):
@@ -670,7 +694,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.0.0.5"
+    VERSION = "v2.1.0"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -983,11 +1007,12 @@ class PromptBook(QMainWindow):
         self.book_search_input.textChanged.connect(self.filter_books)
         
         self.book_list = BookList()  # BookList 사용
-        self.book_list.setSelectionMode(QListWidget.SingleSelection)
+        self.book_list.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 다중 선택 모드 활성화
         self.book_list.setFocusPolicy(Qt.StrongFocus)
         # 델리게이트 제거 - 커스텀 위젯 사용할 예정
         self.book_list.installEventFilter(self)
         self.book_list.itemClicked.connect(lambda item: self.on_book_selected(self.book_list.row(item)))
+        self.book_list.itemSelectionChanged.connect(self.on_book_selection_changed)  # 다중 선택 변경 감지
         self.book_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.book_list.customContextMenuRequested.connect(self.show_book_context_menu)
         
@@ -1014,7 +1039,9 @@ class PromptBook(QMainWindow):
         self.char_list = CharacterList()  # QListWidget 대신 CharacterList 사용
         # 기본적으로 드래그 앤 드롭 비활성화
         self.char_list.setDragDropMode(QAbstractItemView.NoDragDrop)
+        self.char_list.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 다중 선택 모드 활성화
         self.char_list.itemClicked.connect(self.on_character_clicked)
+        self.char_list.itemSelectionChanged.connect(self.on_character_selection_changed)  # 다중 선택 변경 감지
         self.char_list.model().rowsMoved.connect(self.on_character_reordered)
         self.char_list.installEventFilter(self)
         self.char_list.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1719,12 +1746,22 @@ class PromptBook(QMainWindow):
         QToolTip.showText(self.copy_button.mapToGlobal(self.copy_button.rect().center()), "프롬프트가 복사되었습니다.")
 
     def duplicate_selected_character_with_tooltip(self):
-        self.duplicate_selected_character()
-        QToolTip.showText(self.duplicate_button.mapToGlobal(self.duplicate_button.rect().center()), "페이지가 복제되었습니다.")
+        # 다중 선택이 있는지 확인
+        selected_items = self.char_list.selectedItems()
+        if len(selected_items) > 1:
+            self.duplicate_multiple_characters(selected_items)
+        else:
+            self.duplicate_selected_character()
+            QToolTip.showText(self.duplicate_button.mapToGlobal(self.duplicate_button.rect().center()), "페이지가 복제되었습니다.")
 
     def delete_selected_character_with_tooltip(self):
-        self.delete_selected_character()
-        QToolTip.showText(self.delete_button.mapToGlobal(self.delete_button.rect().center()), "페이지가 삭제되었습니다.")
+        # 다중 선택이 있는지 확인
+        selected_items = self.char_list.selectedItems()
+        if len(selected_items) > 1:
+            self.delete_multiple_characters(selected_items)
+        else:
+            self.delete_selected_character()
+            QToolTip.showText(self.delete_button.mapToGlobal(self.delete_button.rect().center()), "페이지가 삭제되었습니다.")
 
     def load_preview_image(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "이미지 불러오기", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
@@ -1799,6 +1836,68 @@ class PromptBook(QMainWindow):
         index = self.char_list.row(item)
         print(f"[DEBUG] 클릭된 인덱스: {index}")
         self.on_character_selected(index)
+    
+    def on_book_selection_changed(self):
+        """북 선택 변경 시 호출 (다중 선택 감지용)"""
+        selected_books = self.book_list.selectedItems()
+        
+        if len(selected_books) > 1:
+            # 다중 선택된 경우 - 페이지 리스트 숨기기
+            self.current_book = None
+            self.state.characters = []
+            self.char_list.clear()
+            if hasattr(self, 'add_button'):
+                self.add_button.setEnabled(False)
+            
+            # 입력 필드 초기화
+            self.current_index = -1
+            if hasattr(self, 'name_input'):
+                self.name_input.clear()
+            if hasattr(self, 'tag_input'):
+                self.tag_input.clear()
+            if hasattr(self, 'desc_input'):
+                self.desc_input.clear()
+            if hasattr(self, 'prompt_input'):
+                self.prompt_input.clear()
+            self.image_scene.clear()
+            self.image_view.update_drop_hint_visibility()
+            
+            self.update_all_buttons_state()
+        elif len(selected_books) == 1:
+            # 단일 선택으로 돌아온 경우
+            current_item = selected_books[0]
+            index = self.book_list.row(current_item)
+            self.on_book_selected(index)
+    
+    def on_character_selection_changed(self):
+        """페이지 선택 변경 시 호출 (다중 선택 감지용)"""
+        selected_pages = self.char_list.selectedItems()
+        
+        if len(selected_pages) > 1:
+            # 다중 선택된 경우 - 내용 포커싱 안하기
+            self.current_index = -1
+            if hasattr(self, 'name_input'):
+                self.name_input.clear()
+            if hasattr(self, 'tag_input'):
+                self.tag_input.clear()
+            if hasattr(self, 'desc_input'):
+                self.desc_input.clear()
+            if hasattr(self, 'prompt_input'):
+                self.prompt_input.clear()
+            if hasattr(self, 'lock_checkbox'):
+                self.lock_checkbox.setChecked(False)
+                self.lock_checkbox.setText("🔓 페이지 잠금")
+                self.lock_checkbox.setEnabled(False)
+            self.image_scene.clear()
+            self.image_view.update_drop_hint_visibility()
+            
+            self.update_all_buttons_state()
+            self.update_image_buttons_state()
+        elif len(selected_pages) == 1:
+            # 단일 선택으로 돌아온 경우
+            current_item = selected_pages[0]
+            index = self.char_list.row(current_item)
+            self.on_character_selected(index)
 
     def handle_character_sort(self):
         mode = self.sort_selector.currentText()
@@ -2259,6 +2358,28 @@ class PromptBook(QMainWindow):
         # 메뉴 스타일 적용
         menu_style = self.get_menu_style()
         menu.setStyleSheet(menu_style)
+        
+        # 선택된 아이템들 확인
+        selected_items = self.char_list.selectedItems()
+        selected_count = len(selected_items)
+        
+        if selected_count > 1:
+            # 다중 선택된 경우
+            menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
+            menu.addSeparator()
+            
+            duplicate_action = menu.addAction("📋 모두 복제")
+            delete_action = menu.addAction("🗑️ 모두 삭제")
+            
+            # 메뉴 실행 및 액션 처리
+            action = menu.exec_(self.char_list.mapToGlobal(position))
+            if action == duplicate_action:
+                self.duplicate_multiple_characters(selected_items)
+            elif action == delete_action:
+                self.delete_multiple_characters(selected_items)
+            return
+        
+        # 단일 선택인 경우 기존 메뉴
         name = item.data(Qt.UserRole)
         is_favorite = False
         
@@ -2360,6 +2481,24 @@ class PromptBook(QMainWindow):
         menu_style = self.get_menu_style()
         menu.setStyleSheet(menu_style)
         
+        # 선택된 아이템들 확인
+        selected_items = self.book_list.selectedItems()
+        selected_count = len(selected_items)
+        
+        if selected_count > 1:
+            # 다중 선택된 경우
+            menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
+            menu.addSeparator()
+            
+            delete_action = menu.addAction("🗑️ 모두 삭제")
+            
+            # 메뉴 실행 및 액션 처리
+            action = menu.exec_(self.book_list.mapToGlobal(position))
+            if action == delete_action:
+                self.delete_multiple_books(selected_items)
+            return
+        
+        # 단일 선택인 경우 기존 메뉴
         name = item.data(Qt.UserRole)
         is_favorite = False
         
@@ -2656,8 +2795,195 @@ class PromptBook(QMainWindow):
             self.update_image_buttons_state()
             
             self.save_to_file()
-
-
+    
+    def delete_focused_item(self):
+        """현재 포커스된 리스트에 따라 북 또는 페이지 삭제 (다중 선택 지원)"""
+        # 현재 포커스된 위젯 확인
+        focused_widget = QApplication.focusWidget()
+        
+        # 북 리스트에 포커스가 있는 경우
+        if focused_widget == self.book_list or self.book_list.isAncestorOf(focused_widget):
+            selected_items = self.book_list.selectedItems()
+            if selected_items:
+                self.delete_multiple_books(selected_items)
+        
+        # 페이지 리스트에 포커스가 있는 경우
+        elif focused_widget == self.char_list or self.char_list.isAncestorOf(focused_widget):
+            selected_items = self.char_list.selectedItems()
+            if selected_items:
+                self.delete_multiple_characters(selected_items)
+        
+        # 다른 위젯에 포커스가 있어도 페이지가 선택되어 있으면 페이지 삭제
+        elif self.current_index >= 0:
+            self.delete_selected_character()
+    
+    def delete_multiple_books(self, selected_items):
+        """선택된 여러 북을 삭제합니다."""
+        if not selected_items:
+            return
+            
+        book_names = []
+        for item in selected_items:
+            name = item.data(Qt.UserRole)
+            if name:
+                book_names.append(name)
+        
+        if not book_names:
+            return
+            
+        # 삭제 확인 대화상자
+        count = len(book_names)
+        if count == 1:
+            message = f"'{book_names[0]}' 북을 삭제하시겠습니까?"
+        else:
+            message = f"선택된 {count}개의 북을 삭제하시겠습니까?"
+            
+        reply = QMessageBox.question(
+            self, 
+            "북 삭제 확인",
+            f"{message}\n이 작업은 되돌릴 수 없습니다.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes  # Enter 키로 삭제 확인 가능
+        )
+        
+        if reply == QMessageBox.Yes:
+            # 현재 선택된 북이 삭제 목록에 있는지 확인
+            current_book_deleted = self.current_book in book_names
+            
+            # 북들 삭제
+            for name in book_names:
+                if name in self.state.books:
+                    del self.state.books[name]
+            
+            # 리스트에서 아이템들 제거
+            for item in selected_items:
+                row = self.book_list.row(item)
+                self.book_list.takeItem(row)
+            
+            # 현재 선택된 북이 삭제된 경우 상태 초기화
+            if current_book_deleted:
+                self.current_book = None
+                self.state.characters = []
+                self.char_list.clear()
+                if hasattr(self, 'name_input'):
+                    self.name_input.clear()
+                if hasattr(self, 'tag_input'):
+                    self.tag_input.clear()
+                if hasattr(self, 'desc_input'):
+                    self.desc_input.clear()
+                if hasattr(self, 'prompt_input'):
+                    self.prompt_input.clear()
+                self.image_scene.clear()
+            
+            # UI 상태 업데이트
+            self.update_all_buttons_state()
+            self.save_to_file()
+            
+            # 다른 북이 있고 현재 북이 삭제되었다면 첫 번째 북 선택
+            if current_book_deleted and self.book_list.count() > 0:
+                self.book_list.setCurrentRow(0)
+                self.on_book_selected(0)
+    
+    def delete_multiple_characters(self, selected_items):
+        """선택된 여러 페이지를 삭제합니다."""
+        if not selected_items:
+            return
+            
+        page_names = []
+        locked_pages = []
+        
+        for item in selected_items:
+            name = item.data(Qt.UserRole)
+            if name:
+                # 해당 페이지 찾기
+                for char in self.state.characters:
+                    if char.get("name") == name:
+                        if char.get('locked', False):
+                            locked_pages.append(name)
+                        else:
+                            page_names.append(name)
+                        break
+        
+        # 잠금된 페이지가 있으면 경고
+        if locked_pages:
+            locked_names = ", ".join(locked_pages)
+            if page_names:
+                reply = QMessageBox.question(
+                    self,
+                    "일부 삭제 불가",
+                    f"다음 페이지들은 잠금되어 있어 삭제할 수 없습니다:\n{locked_names}\n\n나머지 페이지들만 삭제하시겠습니까?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
+                    return
+            else:
+                QMessageBox.warning(
+                    self,
+                    "삭제 불가",
+                    f"선택된 모든 페이지가 잠금되어 있습니다:\n{locked_names}\n\n잠금을 해제한 후 다시 시도해주세요."
+                )
+                return
+        
+        if not page_names:
+            return
+            
+        # 삭제 확인 대화상자
+        count = len(page_names)
+        if count == 1:
+            message = f"'{page_names[0]}' 페이지를 삭제하시겠습니까?"
+        else:
+            message = f"선택된 {count}개의 페이지를 삭제하시겠습니까?"
+            
+        reply = QMessageBox.question(
+            self, 
+            "페이지 삭제 확인",
+            f"{message}\n이 작업은 되돌릴 수 없습니다.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes  # Enter 키로 삭제 확인 가능
+        )
+        
+        if reply == QMessageBox.Yes:
+            # 페이지들 삭제 (역순으로 삭제하여 인덱스 문제 방지)
+            pages_to_delete = []
+            for i, char in enumerate(self.state.characters):
+                if char.get("name") in page_names:
+                    pages_to_delete.append(i)
+                    
+                    # 이미지 파일 삭제
+                    image_path = char.get("image_path")
+                    if image_path and os.path.exists(image_path):
+                        try:
+                            os.remove(image_path)
+                        except Exception as e:
+                            print(f"이미지 파일 삭제 실패: {e}")
+            
+            # 역순으로 삭제
+            for i in reversed(pages_to_delete):
+                del self.state.characters[i]
+            
+            # 상태 업데이트
+            self.state.books[self.current_book]["pages"] = self.state.characters
+            
+            # UI 업데이트
+            self.refresh_character_list()
+            
+            # 현재 선택된 페이지가 삭제되었는지 확인
+            if self.current_index in pages_to_delete or not self.state.characters:
+                self.current_index = -1
+                if hasattr(self, 'name_input'):
+                    self.name_input.clear()
+                if hasattr(self, 'tag_input'):
+                    self.tag_input.clear()
+                if hasattr(self, 'desc_input'):
+                    self.desc_input.clear()
+                if hasattr(self, 'prompt_input'):
+                    self.prompt_input.clear()
+                self.image_scene.clear()
+                if hasattr(self.image_view, 'drop_hint'):
+                    self.image_view.drop_hint.setVisible(True)
+            
+            self.save_to_file()
 
     def duplicate_selected_character(self):
         if not self.current_book or self.current_index < 0:
@@ -2708,6 +3034,114 @@ class PromptBook(QMainWindow):
         self.state.books[self.current_book]["pages"] = self.state.characters
         self.refresh_character_list(selected_name=base_name)
         self.save_to_file()
+    
+    def duplicate_focused_characters(self):
+        """포커스된 리스트의 선택된 페이지들을 복제합니다."""
+        # 현재 포커스된 위젯 확인
+        focused_widget = QApplication.focusWidget()
+        
+        # 페이지 리스트에 포커스가 있는 경우만 복제
+        if focused_widget == self.char_list or self.char_list.isAncestorOf(focused_widget):
+            selected_items = self.char_list.selectedItems()
+            if selected_items:
+                self.duplicate_multiple_characters(selected_items)
+        else:
+            # 다른 위젯에 포커스가 있으면 기존 단일 복제 방식 사용
+            self.duplicate_selected_character()
+    
+    def duplicate_multiple_characters(self, selected_items):
+        """선택된 여러 페이지를 복제합니다."""
+        if not selected_items or not self.current_book:
+            return
+            
+        page_names = []
+        for item in selected_items:
+            name = item.data(Qt.UserRole)
+            if name:
+                page_names.append(name)
+        
+        if not page_names:
+            return
+            
+        # 복제할 페이지 데이터들 수집
+        pages_to_duplicate = []
+        for char in self.state.characters:
+            if char.get("name") in page_names:
+                pages_to_duplicate.append(char.copy())
+        
+        if not pages_to_duplicate:
+            return
+            
+        # 기존 페이지 이름들 수집 (중복 방지용)
+        existing_names = {char["name"] for char in self.state.characters}
+        
+        # 새로 생성될 페이지들
+        new_pages = []
+        
+        for original_data in pages_to_duplicate:
+            # 이름 중복 방지
+            base_name = original_data["name"]
+            
+            # 새 이름 생성
+            for i in range(1, 1000):
+                candidate = f"{base_name} ({i})"
+                if candidate not in existing_names:
+                    base_name = candidate
+                    existing_names.add(candidate)  # 중복 방지용 세트에 추가
+                    break
+                    
+            # 새 데이터 생성
+            new_data = original_data.copy()
+            new_data["name"] = base_name
+            
+            # 이미지가 있는 경우 복사
+            if "image_path" in original_data and os.path.exists(original_data["image_path"]):
+                original_path = original_data["image_path"]
+                file_name, ext = os.path.splitext(os.path.basename(original_path))
+                new_file_name = f"{file_name}_copy{ext}"
+                new_path = os.path.join(os.path.dirname(original_path), new_file_name)
+                
+                # 파일명 중복 방지
+                counter = 1
+                while os.path.exists(new_path):
+                    new_file_name = f"{file_name}_copy{counter}{ext}"
+                    new_path = os.path.join(os.path.dirname(original_path), new_file_name)
+                    counter += 1
+                
+                try:
+                    shutil.copy2(original_path, new_path)
+                    new_data["image_path"] = new_path
+                except Exception as e:
+                    print(f"이미지 복사 실패: {e}")
+                    new_data["image_path"] = ""
+            
+            new_pages.append(new_data)
+        
+        # 새 페이지들 추가
+        self.state.characters.extend(new_pages)
+        
+        # 정렬 모드가 커스텀이 아닌 경우 정렬 적용
+        if not self.sort_mode_custom:
+            from promptbook_features import sort_characters
+            self.state.characters = sort_characters(self.state.characters, self.sort_selector.currentText())
+        
+        # 상태 업데이트 및 저장
+        self.state.books[self.current_book]["pages"] = self.state.characters
+        self.refresh_character_list()
+        self.save_to_file()
+        
+        # 복제 완료 메시지
+        count = len(new_pages)
+        if count == 1:
+            message = "1개 페이지가 복제되었습니다."
+        else:
+            message = f"{count}개 페이지가 복제되었습니다."
+        
+        if hasattr(self, 'duplicate_button'):
+            QToolTip.showText(
+                self.duplicate_button.mapToGlobal(self.duplicate_button.rect().center()), 
+                message
+            )
 
     def delete_selected_character(self):
         if not self.current_book or self.current_index < 0:
@@ -2759,6 +3193,71 @@ class PromptBook(QMainWindow):
                 self.image_view.drop_hint.setVisible(True)
             
             self.save_to_file()
+    
+    def rename_focused_item(self):
+        """현재 포커스된 리스트에 따라 북 또는 페이지 이름 변경"""
+        # 현재 포커스된 위젯 확인
+        focused_widget = QApplication.focusWidget()
+        
+        # 북 리스트에 포커스가 있는 경우
+        if focused_widget == self.book_list or self.book_list.isAncestorOf(focused_widget):
+            current_item = self.book_list.currentItem()
+            if current_item:
+                self.rename_book_dialog(current_item)
+        
+        # 페이지 리스트에 포커스가 있는 경우
+        elif focused_widget == self.char_list or self.char_list.isAncestorOf(focused_widget):
+            current_item = self.char_list.currentItem()
+            if current_item:
+                self.rename_character_dialog(current_item)
+    
+    def rename_character_dialog(self, item):
+        """페이지 이름 변경 대화상자"""
+        old_name = item.data(Qt.UserRole)
+        if not old_name:
+            return
+            
+        new_name, ok = QInputDialog.getText(
+            self, 
+            "페이지 이름 변경", 
+            "새 이름을 입력하세요:", 
+            text=old_name
+        )
+        
+        if ok and new_name and new_name != old_name:
+            # 중복 이름 확인
+            existing_names = {char["name"] for char in self.state.characters if char["name"] != old_name}
+            if new_name in existing_names:
+                QMessageBox.warning(self, "이름 중복", "이미 존재하는 페이지 이름입니다.")
+                return
+            
+            # 페이지 데이터 업데이트
+            for char in self.state.characters:
+                if char["name"] == old_name:
+                    char["name"] = new_name
+                    break
+            
+            # UI 업데이트
+            self.refresh_character_list(selected_name=new_name)
+            self.save_to_file()
+    
+    def handle_book_reorder(self):
+        """북 순서 변경 처리"""
+        print("[DEBUG] handle_book_reorder 호출됨")
+        self.book_sort_custom = True
+        
+        # 새로운 북 순서 생성
+        new_book_order = {}
+        for i in range(self.book_list.count()):
+            item = self.book_list.item(i)
+            book_name = item.data(Qt.UserRole)
+            if book_name in self.state.books:
+                new_book_order[book_name] = self.state.books[book_name]
+        
+        # 순서 업데이트
+        self.state.books = new_book_order
+        print("[DEBUG] 새로운 북 순서로 저장됨")
+        self.save_to_file()
 
     def apply_theme(self, theme_name):
         """테마를 적용합니다."""
@@ -3384,13 +3883,17 @@ class PromptBook(QMainWindow):
         self.new_page_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
         self.new_page_shortcut.activated.connect(self.add_character)
         
-        # Ctrl+D: 페이지 복제
+        # Ctrl+D: 페이지 복제 (다중 선택 지원)
         self.duplicate_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
-        self.duplicate_shortcut.activated.connect(self.duplicate_selected_character)
+        self.duplicate_shortcut.activated.connect(self.duplicate_focused_characters)
         
-        # Delete: 페이지 삭제 (확인 필요)
+        # Delete: 포커스된 리스트에 따라 북 또는 페이지 삭제 (다중 선택 지원)
         self.delete_shortcut = QShortcut(QKeySequence("Delete"), self)
-        self.delete_shortcut.activated.connect(self.delete_selected_character)
+        self.delete_shortcut.activated.connect(self.delete_focused_item)
+        
+        # F2: 포커스된 리스트에 따라 북 또는 페이지 이름 변경
+        self.rename_shortcut = QShortcut(QKeySequence("F2"), self)
+        self.rename_shortcut.activated.connect(self.rename_focused_item)
         
         print("[DEBUG] 단축키 설정 완료")
     
