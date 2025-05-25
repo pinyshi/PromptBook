@@ -819,7 +819,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.1"
+    VERSION = "v2.2.2"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -944,6 +944,18 @@ class PromptBook(QMainWindow):
             "selected": "#ff00ff",
             "button": "#1a1a1a",
             "button_hover": "#2a2a2a"
+        },
+        "커스텀 테마": {
+            "background": "#2b2b2b",
+            "surface": "#3c3c3c", 
+            "primary": "#8a8a8a",
+            "text": "#ffffff",
+            "text_secondary": "#cccccc",
+            "border": "#555555",
+            "hover": "#4a4a4a",
+            "selected": "#8a8a8a",
+            "button": "#404040",
+            "button_hover": "#525252"
         }
     }
     
@@ -1096,6 +1108,9 @@ class PromptBook(QMainWindow):
         
         # 현재 테마 저장용 변수
         self.current_theme = "어두운 모드"
+        
+        # 커스텀 배경 이미지 경로
+        self.custom_background_image = None
         
         # 도구 메뉴 추가
         tools_menu = menubar.addMenu("🔧 도구")
@@ -1696,7 +1711,8 @@ class PromptBook(QMainWindow):
             "sort_mode_custom": self.sort_mode_custom,
             "book_sort_mode": self.book_sort_selector.currentText() if hasattr(self, "book_sort_selector") else "오름차순 정렬",
             "book_sort_custom": getattr(self, "book_sort_custom", False),
-            "current_theme": getattr(self, "current_theme", "어두운 모드")
+            "current_theme": getattr(self, "current_theme", "어두운 모드"),
+            "custom_background_image": getattr(self, "custom_background_image", None)
         }
         try:
             with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
@@ -1718,6 +1734,9 @@ class PromptBook(QMainWindow):
                 if saved_theme in self.THEMES:
                     self.current_theme = saved_theme
                     print(f"[DEBUG] 저장된 테마 로드: {saved_theme}")
+                
+                # 커스텀 배경 이미지 복원
+                self.custom_background_image = settings.get("custom_background_image", None)
                         
         except Exception as e:
             print(f"[ERROR] 초기 UI 설정 불러오기 실패: {e}")
@@ -3769,6 +3788,10 @@ class PromptBook(QMainWindow):
         self.current_theme = theme_name
         theme = self.THEMES[theme_name]
         
+        # 커스텀 테마가 아닌 경우 배경 이미지 초기화
+        if theme_name != "커스텀 테마":
+            self.custom_background_image = None
+        
         # 전체 애플리케이션 스타일시트 적용
         style = f"""
         QMainWindow {{
@@ -4210,6 +4233,13 @@ class PromptBook(QMainWindow):
         
         self.setStyleSheet(style)
         
+        # 커스텀 테마인 경우 배경 이미지 적용
+        if theme_name == "커스텀 테마" and self.custom_background_image:
+            self.apply_background_image(self.custom_background_image)
+        else:
+            # 다른 테마인 경우 배경 이미지 제거
+            self.remove_background_image()
+        
         # 타이틀 바 버튼 스타일 업데이트 (테마별 색상 적용)
         if hasattr(self, 'minimize_btn'):
             if theme_name in ["블루 네온", "핑크 네온"]:
@@ -4329,10 +4359,325 @@ class PromptBook(QMainWindow):
             for action in self.theme_group.actions():
                 action.setChecked(action.text() == theme_name)
         
+        # 타이틀바 스타일 업데이트
+        self.update_title_bar_style()
+        
         # UI 설정에 테마 저장
         self.save_ui_settings()
         
         print(f"[DEBUG] 테마 적용됨: {theme_name}")
+
+    def apply_custom_theme(self):
+        """커스텀 테마 적용 - 이미지 파일 선택"""
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getOpenFileName(
+            self,
+            "배경 이미지 선택",
+            "",
+            "이미지 파일 (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp)"
+        )
+        
+        if file_path:
+            self.custom_background_image = file_path
+            self.apply_theme("커스텀 테마")
+        else:
+            # 이미지 선택을 취소한 경우 이전 테마로 되돌리기
+            for action in self.theme_group.actions():
+                if action.text().endswith(self.current_theme):
+                    action.setChecked(True)
+                    break
+
+    def apply_background_image(self, image_path):
+        """배경 이미지를 적용합니다."""
+        try:
+            from PySide6.QtGui import QPixmap
+            
+            # 이미지 로드
+            pixmap = QPixmap(image_path)
+            if pixmap.isNull():
+                print(f"[ERROR] 이미지 로드 실패: {image_path}")
+                return
+            
+            print(f"[DEBUG] 원본 이미지 크기: {pixmap.size()}")
+            print(f"[DEBUG] 윈도우 크기: {self.size()}")
+            
+            # 배경 이미지 저장
+            self.background_pixmap = pixmap
+            
+            # 메인 윈도우에 배경 이미지 직접 설정
+            import os
+            image_path_fixed = os.path.abspath(image_path).replace('\\', '/')
+            print(f"[DEBUG] 배경 이미지 경로: {image_path_fixed}")
+            
+            # 중앙 위젯을 투명하게 설정
+            central_widget = self.centralWidget()
+            if central_widget:
+                central_widget.setAttribute(Qt.WA_TranslucentBackground, True)
+                central_widget.setStyleSheet("background: transparent;")
+                print(f"[DEBUG] 중앙 위젯을 투명하게 설정")
+            
+            # 커스텀 테마용 반투명 스타일 적용
+            self.apply_custom_theme_transparency()
+            
+            # 윈도우 다시 그리기 (paintEvent가 호출됨)
+            self.update()
+            
+            print(f"[DEBUG] 배경 이미지 적용됨: {image_path}")
+            
+        except Exception as e:
+            print(f"[ERROR] 배경 이미지 적용 실패: {e}")
+
+    def remove_background_image(self):
+        """배경 이미지를 제거합니다."""
+        try:
+            # 배경 이미지 제거
+            if hasattr(self, 'background_pixmap'):
+                self.background_pixmap = None
+            
+            # 투명도 스타일 제거
+            self.remove_custom_theme_transparency()
+            
+            # 윈도우 다시 그리기
+            self.update()
+            
+        except Exception as e:
+            print(f"[ERROR] 배경 이미지 제거 실패: {e}")
+
+    def paintEvent(self, event):
+        """커스텀 페인트 이벤트 - 배경 이미지 그리기"""
+        print(f"[DEBUG] paintEvent 호출됨")
+        
+        # 배경 이미지가 있는 경우에만 그리기
+        if hasattr(self, 'background_pixmap') and self.background_pixmap:
+            from PySide6.QtGui import QPainter
+            
+            print(f"[DEBUG] 배경 이미지 있음, 그리기 시작")
+            
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # 윈도우 전체 크기에 맞게 이미지 스케일링
+            scaled_pixmap = self.background_pixmap.scaled(
+                self.size(),
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation
+            )
+            
+            print(f"[DEBUG] 원본 이미지: {self.background_pixmap.size()}")
+            print(f"[DEBUG] 윈도우 크기: {self.size()}")
+            print(f"[DEBUG] 스케일된 이미지: {scaled_pixmap.size()}")
+            
+            # 중앙 정렬을 위한 위치 계산
+            x = (self.width() - scaled_pixmap.width()) // 2
+            y = (self.height() - scaled_pixmap.height()) // 2
+            
+            print(f"[DEBUG] 그리기 위치: ({x}, {y})")
+            
+            # 배경 이미지 그리기
+            painter.drawPixmap(x, y, scaled_pixmap)
+            painter.end()
+            
+            print(f"[DEBUG] 배경 이미지 그리기 완료")
+        else:
+            print(f"[DEBUG] 배경 이미지 없음")
+        
+        # 부모 클래스의 paintEvent 호출
+        super().paintEvent(event)
+
+    def apply_custom_theme_transparency(self):
+        """커스텀 테마용 투명도 스타일 적용"""
+        try:
+            # 현재 테마 색상 가져오기
+            theme = self.THEMES.get(self.current_theme, self.THEMES['어두운 모드'])
+            
+            # 반투명 스타일 정의
+            transparency_style = f"""
+            /* 중요한 UI 요소들 - 적당히 불투명 (80% 불투명도) */
+            QListWidget {{
+                background-color: rgba({self.hex_to_rgba(theme['surface'])}, 0.8);
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                outline: none;
+                border-radius: 3px;
+            }}
+            
+            QLineEdit, CustomLineEdit, QTextEdit {{
+                background-color: rgba({self.hex_to_rgba(theme['surface'])}, 0.85);
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 4px;
+                border-radius: 3px;
+            }}
+            
+            QPushButton {{
+                background-color: rgba({self.hex_to_rgba(theme['button'])}, 0.8);
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 6px 12px;
+                border-radius: 3px;
+                font-weight: bold;
+            }}
+            
+            QPushButton:hover {{
+                background-color: rgba({self.hex_to_rgba(theme['button_hover'])}, 0.9);
+            }}
+            
+            QComboBox {{
+                background-color: rgba({self.hex_to_rgba(theme['button'])}, 0.8);
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 4px 8px;
+                border-radius: 3px;
+            }}
+            
+            /* 이미지 뷰포트 - 투명하게 (30% 불투명도) */
+            QGraphicsView {{
+                background-color: rgba({self.hex_to_rgba(theme['surface'])}, 0.3);
+                border: 1px solid {theme['border']};
+                border-radius: 3px;
+            }}
+            
+            /* 메인 위젯들 - 매우 투명 */
+            QWidget {{
+                background-color: rgba({self.hex_to_rgba(theme['background'])}, 0.1);
+                color: {theme['text']};
+            }}
+            
+            /* 라벨은 완전 투명 */
+            QLabel {{
+                background-color: transparent;
+                color: {theme['text']};
+            }}
+            """
+            
+            # 기존 스타일에 추가
+            current_style = self.styleSheet()
+            self.setStyleSheet(current_style + transparency_style)
+            
+            print("[DEBUG] 커스텀 테마 투명도 적용됨")
+            
+        except Exception as e:
+            print(f"[ERROR] 투명도 적용 실패: {e}")
+
+    def remove_custom_theme_transparency(self):
+        """커스텀 테마 투명도 스타일 제거"""
+        try:
+            # 현재 테마 다시 적용하여 투명도 제거
+            if hasattr(self, 'current_theme'):
+                self.apply_theme(self.current_theme)
+            
+        except Exception as e:
+            print(f"[ERROR] 투명도 제거 실패: {e}")
+
+    def hex_to_rgba(self, hex_color):
+        """HEX 색상을 RGB 값으로 변환"""
+        try:
+            hex_color = hex_color.lstrip('#')
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            return f"{r}, {g}, {b}"
+        except:
+            return "128, 128, 128"  # 기본값
+
+    def set_central_widget_background(self, image_path):
+        """중앙 위젯에 배경 이미지 설정 (대안 방법)"""
+        try:
+            central_widget = self.centralWidget()
+            if central_widget:
+                # 경로 수정 (Qt 호환성)
+                image_path_fixed = image_path.replace('\\', '/')
+                
+                # 중앙 위젯에 배경 이미지 스타일 적용
+                background_style = f"""
+                QWidget {{
+                    background-image: url({image_path_fixed});
+                    background-repeat: no-repeat;
+                    background-position: center center;
+                    background-attachment: fixed;
+                }}
+                """
+                
+                central_widget.setStyleSheet(background_style)
+                print(f"[DEBUG] 중앙 위젯에 배경 이미지 설정: {image_path}")
+                
+        except Exception as e:
+            print(f"[ERROR] 중앙 위젯 배경 설정 실패: {e}")
+
+    def update_title_bar_style(self):
+        """현재 테마에 맞게 타이틀바 스타일 업데이트"""
+        if not hasattr(self, 'title_bar'):
+            return
+            
+        current_theme = getattr(self, 'current_theme', '어두운 모드')
+        theme = self.THEMES.get(current_theme, self.THEMES['어두운 모드'])
+        
+        # 메뉴 버튼 스타일
+        menu_button_style = f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                color: {theme['text']};
+                font-size: 16px;
+                padding: 5px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme['hover']};
+            }}
+        """
+        
+        # 타이틀 라벨 스타일
+        title_label_style = f"""
+            QLabel {{
+                color: {theme['text']};
+                font-weight: bold;
+                font-size: 14px;
+                padding: 0 10px;
+            }}
+        """
+        
+        # 일반 버튼 스타일 (Donate, 최소화, 최대화)
+        button_style = f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                color: {theme['text']};
+                font-size: 14px;
+                padding: 5px 10px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme['hover']};
+            }}
+        """
+        
+        # 닫기 버튼 스타일 (빨간색 호버)
+        close_button_style = f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                color: {theme['text']};
+                font-size: 14px;
+                padding: 5px 10px;
+            }}
+            QPushButton:hover {{
+                background-color: #e81123;
+                color: white;
+            }}
+        """
+        
+        # 스타일 적용
+        if hasattr(self, 'menu_btn'):
+            self.menu_btn.setStyleSheet(menu_button_style)
+        if hasattr(self, 'title_label'):
+            self.title_label.setStyleSheet(title_label_style)
+        if hasattr(self, 'donate_btn'):
+            self.donate_btn.setStyleSheet(button_style)
+        if hasattr(self, 'minimize_btn'):
+            self.minimize_btn.setStyleSheet(button_style)
+        if hasattr(self, 'maximize_btn'):
+            self.maximize_btn.setStyleSheet(button_style)
+        if hasattr(self, 'close_btn'):
+            self.close_btn.setStyleSheet(close_button_style)
 
     def get_menu_style(self):
         """현재 테마에 맞는 메뉴 스타일 반환"""
@@ -4478,7 +4823,8 @@ class PromptBook(QMainWindow):
             "벚꽃": "🌸",
             "민트": "🍃",
             "블루 네온": "⚡",
-            "핑크 네온": "💖"
+            "핑크 네온": "💖",
+            "커스텀 테마": "🖼️"
         }
         
         for theme_name in self.THEMES.keys():
@@ -4487,7 +4833,10 @@ class PromptBook(QMainWindow):
             
             theme_action = QAction(display_name, self)
             theme_action.setCheckable(True)
-            theme_action.triggered.connect(lambda checked, name=theme_name: self.apply_theme(name))
+            if theme_name == "커스텀 테마":
+                theme_action.triggered.connect(lambda checked, name=theme_name: self.apply_custom_theme())
+            else:
+                theme_action.triggered.connect(lambda checked, name=theme_name: self.apply_theme(name))
             self.theme_group.addAction(theme_action)
             
             # 현재 테마 설정
@@ -4511,18 +4860,7 @@ class PromptBook(QMainWindow):
         self.menu_btn.setObjectName("menuButton")
         self.menu_btn.setToolTip("메뉴")
         self.menu_btn.clicked.connect(self.show_main_menu)
-        self.menu_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                color: white;
-                font-size: 16px;
-                padding: 5px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.1);
-            }
-        """)
+        # 스타일은 update_title_bar_style()에서 설정됨
         
         # 타이틀 라벨
         title_text = f"프롬프트 북 {self.VERSION}"  # 버전 정보 추가
@@ -4530,14 +4868,7 @@ class PromptBook(QMainWindow):
         self.title_label.setObjectName("titleLabel")
         self.title_label.setAlignment(Qt.AlignCenter)  # 중앙 정렬 설정
         self.title_label.setMinimumWidth(200)  # 최소 너비 설정
-        self.title_label.setStyleSheet("""
-            QLabel {
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-                padding: 0 10px;
-            }
-        """)
+        # 스타일은 update_title_bar_style()에서 설정됨
 
         # Donate 버튼
         self.donate_btn = QPushButton("💖 Donate")
@@ -4557,31 +4888,7 @@ class PromptBook(QMainWindow):
         self.close_btn.clicked.connect(self.close)
         self.close_btn.setToolTip("닫기")
         
-        # 버튼 스타일 설정
-        button_style = """
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                color: white;
-                font-size: 14px;
-                padding: 5px 10px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.1);
-            }
-        """
-        
-        close_button_style = button_style + """
-            QPushButton:hover {
-                background-color: #e81123;
-                color: white;
-            }
-        """
-        
-        self.donate_btn.setStyleSheet(button_style)
-        self.minimize_btn.setStyleSheet(button_style)
-        self.maximize_btn.setStyleSheet(button_style)
-        self.close_btn.setStyleSheet(close_button_style)
+        # 스타일은 update_title_bar_style()에서 설정됨
         
         # 레이아웃에 위젯 추가
         title_layout.addWidget(self.menu_btn)
@@ -4659,6 +4966,12 @@ class PromptBook(QMainWindow):
         super().resizeEvent(event)
         self.apply_rounded_corners()
         self.update_resize_handles()
+        
+        # 커스텀 테마이고 배경 이미지가 있는 경우 다시 그리기
+        if (self.current_theme == "커스텀 테마" and 
+            hasattr(self, 'background_pixmap') and 
+            self.background_pixmap):
+            self.update()
     
     def showEvent(self, event):
         """쇼 이벤트 - 초기 둥근 모서리 적용"""
@@ -4729,6 +5042,11 @@ class PromptBook(QMainWindow):
         shortcuts_action = QAction("⌨️ 단축키 안내", self)
         shortcuts_action.triggered.connect(self.show_shortcuts_help)
         menu.addAction(shortcuts_action)
+        
+        # 사용자 매뉴얼
+        manual_action = QAction("📖 사용자 매뉴얼", self)
+        manual_action.triggered.connect(self.show_user_manual)
+        menu.addAction(manual_action)
         
         # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
         button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
@@ -4889,7 +5207,7 @@ class PromptBook(QMainWindow):
         # 감사 메시지
         thanks_label = QLabel("💖 후원해주셔서 정말 감사합니다! 💖")
         thanks_label.setAlignment(Qt.AlignCenter)
-        thanks_label.setStyleSheet("font-weight: bold; font-size: 12px; color: #ff6b9d;")
+        thanks_label.setStyleSheet(f"font-weight: bold; font-size: 12px; color: {theme['primary']};")
         layout.addWidget(thanks_label)
         
         # 닫기 버튼
@@ -5183,6 +5501,829 @@ class PromptBook(QMainWindow):
         close_button = QPushButton("닫기")
         close_button.clicked.connect(dialog.accept)
         layout.addWidget(close_button)
+        
+        # 다이얼로그 표시
+        dialog.exec()
+
+    def show_user_manual(self):
+        """사용자 매뉴얼 다이얼로그 표시"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📖 프롬프트북 사용자 매뉴얼")
+        dialog.setModal(True)
+        dialog.setFixedSize(900, 700)
+        
+        # 윈도우 플래그 설정
+        dialog.setWindowFlags(Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint)
+        
+        # 현재 테마 적용
+        current_theme = getattr(self, 'current_theme', '어두운 모드')
+        theme = self.THEMES.get(current_theme, self.THEMES['어두운 모드'])
+        
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {theme['background']};
+                color: {theme['text']};
+                border: 2px solid {theme['border']};
+                border-radius: 10px;
+            }}
+            QLabel {{
+                color: {theme['text']};
+                background-color: transparent;
+            }}
+            QPushButton {{
+                background-color: {theme['button']};
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 8px 16px;
+                border-radius: 5px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {theme['button_hover']};
+            }}
+            QScrollArea {{
+                background-color: {theme['surface']};
+                border: 1px solid {theme['border']};
+                border-radius: 5px;
+            }}
+            QWidget#scrollContent {{
+                background-color: {theme['surface']};
+            }}
+            QTreeWidget {{
+                background-color: {theme['surface']};
+                border: 1px solid {theme['border']};
+                border-radius: 5px;
+                color: {theme['text']};
+                selection-background-color: {theme['selected']};
+                outline: none;
+            }}
+            QTreeWidget::item {{
+                padding: 8px;
+                border-bottom: 1px solid {theme['border']};
+            }}
+            QTreeWidget::item:hover {{
+                background-color: {theme['hover']};
+            }}
+            QTreeWidget::item:selected {{
+                background-color: {theme['selected']};
+                color: {theme['text']};
+            }}
+            QTreeWidget::branch:has-children:!has-siblings:closed,
+            QTreeWidget::branch:closed:has-children:has-siblings {{
+                border-image: none;
+                image: url(none);
+            }}
+            QTreeWidget::branch:open:has-children:!has-siblings,
+            QTreeWidget::branch:open:has-children:has-siblings {{
+                border-image: none;
+                image: url(none);
+            }}
+            QTextEdit {{
+                background-color: {theme['surface']};
+                border: 1px solid {theme['border']};
+                border-radius: 5px;
+                color: {theme['text']};
+                padding: 10px;
+                font-size: 13px;
+                line-height: 1.5;
+            }}
+        """)
+        
+        layout = QHBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 왼쪽: 목차 트리
+        tree_widget = QTreeWidget()
+        tree_widget.setHeaderLabel("📚 목차")
+        tree_widget.setFixedWidth(250)
+        tree_widget.setRootIsDecorated(True)
+        
+        # 오른쪽: 내용 표시 영역
+        content_area = QTextEdit()
+        content_area.setReadOnly(True)
+        
+        # 매뉴얼 데이터 구조
+        manual_data = {
+            "🚀 시작하기": {
+                "content": """
+<h2>🚀 시작하기</h2>
+
+<h3>첫 실행</h3>
+<p>프롬프트북을 처음 실행하면 깔끔한 어두운 테마의 인터페이스가 나타납니다.</p>
+
+<p><strong>초기 상태:</strong></p>
+<ul>
+<li>왼쪽: 빈 북 리스트</li>
+<li>가운데: 빈 페이지 리스트</li>
+<li>오른쪽: 페이지 편집 영역</li>
+</ul>
+
+<h3>첫 번째 북 만들기</h3>
+<ol>
+<li>왼쪽 북 리스트 영역에서 <strong>우클릭</strong></li>
+<li>컨텍스트 메뉴에서 <strong>"북 추가"</strong> 선택</li>
+<li>북 이름 입력 (예: "캐릭터 설정")</li>
+<li><strong>Enter</strong> 키로 확인</li>
+</ol>
+
+<h3>첫 번째 페이지 만들기</h3>
+<ol>
+<li>북을 선택한 상태에서 가운데 페이지 리스트에서 <strong>우클릭</strong></li>
+<li><strong>"페이지 추가"</strong> 선택 또는 <strong>Ctrl+N</strong> 단축키 사용</li>
+<li>페이지 이름 입력 (예: "주인공")</li>
+<li>오른쪽 편집 영역에서 내용 작성</li>
+</ol>
+                """,
+                "children": {}
+            },
+            "🖥️ 인터페이스": {
+                "content": """
+<h2>🖥️ 인터페이스 개요</h2>
+
+<h3>전체 레이아웃</h3>
+<p>프롬프트북은 3개의 주요 패널로 구성되어 있습니다:</p>
+
+<h4>상단 타이틀 바</h4>
+<ul>
+<li><strong>☰ 메뉴 버튼:</strong> 메인 메뉴 접근</li>
+<li><strong>💖 Donate 버튼:</strong> 후원 정보</li>
+<li><strong>윈도우 컨트롤:</strong> 최소화, 최대화, 닫기</li>
+</ul>
+
+<h4>왼쪽 패널 - 북 관리</h4>
+<ul>
+<li><strong>북 검색창:</strong> 북 이름으로 실시간 검색</li>
+<li><strong>북 리스트:</strong> 생성된 모든 북 표시</li>
+<li><strong>북 정렬 선택기:</strong> 이름순/즐겨찾기순/생성일순</li>
+</ul>
+
+<h4>가운데 패널 - 페이지 관리</h4>
+<ul>
+<li><strong>페이지 검색창:</strong> 페이지 이름과 태그로 검색</li>
+<li><strong>페이지 리스트:</strong> 선택된 북의 모든 페이지</li>
+<li><strong>페이지 정렬 선택기:</strong> 다양한 정렬 옵션</li>
+</ul>
+
+<h4>오른쪽 패널 - 페이지 편집</h4>
+<ul>
+<li><strong>페이지 정보:</strong> 이름, 태그, 설명</li>
+<li><strong>프롬프트 내용:</strong> 메인 텍스트 편집 영역</li>
+<li><strong>이미지 뷰어:</strong> 첨부된 이미지 표시</li>
+<li><strong>액션 버튼들:</strong> 저장, 복사, 복제 등</li>
+</ul>
+                """,
+                "children": {}
+            },
+            "📚 북 관리": {
+                "content": """
+<h2>📚 북 관리</h2>
+
+<h3>북 추가하기</h3>
+<p><strong>방법 1: 우클릭 메뉴</strong></p>
+<ol>
+<li>왼쪽 북 리스트에서 <strong>우클릭</strong></li>
+<li><strong>"북 추가"</strong> 선택</li>
+<li>북 이름 입력</li>
+<li><strong>Enter</strong>로 확인</li>
+</ol>
+
+<p><strong>방법 2: 메인 메뉴</strong></p>
+<ol>
+<li>상단 <strong>☰ 메뉴</strong> 클릭</li>
+<li><strong>"새 북 추가"</strong> 선택</li>
+</ol>
+
+<h3>북 이름 변경</h3>
+<ul>
+<li><strong>더블클릭:</strong> 변경할 북을 더블클릭</li>
+<li><strong>우클릭 메뉴:</strong> 북에서 우클릭 → "이름 변경"</li>
+<li><strong>F2 단축키:</strong> 북 선택 후 F2 키</li>
+</ul>
+
+<h3>북 이모지 변경</h3>
+<ol>
+<li>북에서 <strong>우클릭</strong></li>
+<li><strong>"이모지 변경"</strong> 선택</li>
+<li>원하는 이모지 클릭</li>
+<li>자동으로 적용됨</li>
+</ol>
+
+<h3>북 즐겨찾기</h3>
+<ol>
+<li>북 항목의 <strong>🖤</strong> (또는 <strong>❤️</strong>) 클릭</li>
+<li>즐겨찾기 토글됨</li>
+<li>즐겨찾기된 북은 <strong>❤️</strong>로 표시</li>
+<li>즐겨찾기 순 정렬 시 상단에 표시</li>
+</ol>
+
+<p><strong>⚠️ 주의사항:</strong> 북 즐겨찾기 토글 시 북 선택이 해제되고 페이지 리스트가 사라집니다.</p>
+                """,
+                "children": {}
+            },
+            "📄 페이지 관리": {
+                "content": """
+<h2>📄 페이지 관리</h2>
+
+<h3>페이지 추가하기</h3>
+<p><strong>전제조건:</strong> 북이 선택되어 있어야 함</p>
+
+<ul>
+<li><strong>Ctrl+N:</strong> 가장 빠른 방법</li>
+<li><strong>우클릭 메뉴:</strong> 페이지 리스트에서 우클릭 → "페이지 추가"</li>
+<li><strong>버튼:</strong> 오른쪽 하단 "추가" 버튼 클릭</li>
+</ul>
+
+<h3>페이지 편집하기</h3>
+<p><strong>기본 정보 입력:</strong></p>
+<ul>
+<li><strong>페이지 이름:</strong> 페이지 식별용 제목</li>
+<li><strong>태그:</strong> 검색용 키워드 (쉼표로 구분)</li>
+<li><strong>설명:</strong> 페이지에 대한 간단한 설명</li>
+<li><strong>프롬프트:</strong> 메인 내용 (AI 프롬프트 등)</li>
+</ul>
+
+<p><strong>💡 편집 팁:</strong></p>
+<ul>
+<li>모든 필드는 실시간으로 자동 저장됨</li>
+<li><strong>Ctrl+S</strong>로 수동 저장 가능</li>
+<li>태그는 검색에 활용됨</li>
+</ul>
+
+<h3>페이지 즐겨찾기</h3>
+<ol>
+<li>페이지 항목의 <strong>🖤</strong> (또는 <strong>❤️</strong>) 클릭</li>
+<li>즐겨찾기 토글됨</li>
+<li>즐겨찾기된 페이지는 <strong>❤️</strong>로 표시</li>
+</ol>
+
+<p><strong>⚠️ 주의사항:</strong> 페이지 즐겨찾기 토글 시 페이지 선택만 해제되고 페이지 리스트는 유지됩니다.</p>
+
+<h3>페이지 잠금</h3>
+<ol>
+<li>페이지에서 <strong>우클릭</strong></li>
+<li><strong>"잠금"</strong> 또는 <strong>"잠금 해제"</strong> 선택</li>
+<li>잠긴 페이지는 <strong>🔒</strong> 아이콘 표시</li>
+<li>잠긴 페이지는 삭제 불가</li>
+</ol>
+                """,
+                "children": {}
+            },
+            "🖼️ 이미지 관리": {
+                "content": """
+<h2>🖼️ 이미지 관리</h2>
+
+<h3>이미지 추가하기</h3>
+<p><strong>방법 1: 드래그 앤 드롭</strong></p>
+<ol>
+<li>파일 탐색기에서 이미지 파일 선택</li>
+<li>오른쪽 이미지 영역으로 <strong>드래그</strong></li>
+<li>자동으로 이미지가 추가됨</li>
+</ol>
+
+<p><strong>방법 2: 버튼 사용</strong></p>
+<ol>
+<li>오른쪽 하단 <strong>"이미지"</strong> 버튼 클릭</li>
+<li>파일 선택 대화상자에서 이미지 선택</li>
+<li><strong>"열기"</strong> 클릭</li>
+</ol>
+
+<p><strong>지원 형식:</strong> PNG, JPG, JPEG, BMP, GIF, TIFF, TIF, WEBP</p>
+
+<h3>이미지 보기</h3>
+<ul>
+<li>이미지가 추가되면 오른쪽 영역에 자동 표시</li>
+<li>마우스 휠로 <strong>확대/축소</strong> 가능</li>
+<li>드래그로 <strong>이미지 이동</strong> 가능</li>
+<li>이미지 크기에 맞게 자동 조절</li>
+</ul>
+
+<h3>이미지 제거</h3>
+<ol>
+<li>이미지가 있는 페이지 선택</li>
+<li>오른쪽 하단 <strong>"제거"</strong> 버튼 클릭</li>
+<li>이미지가 즉시 제거됨</li>
+</ol>
+
+<h3>이미지 정리 기능</h3>
+<p><strong>자동 정리:</strong></p>
+<ul>
+<li>사용되지 않는 이미지 자동 감지</li>
+<li>메뉴에서 <strong>"사용되지 않는 이미지 정리"</strong> 선택</li>
+<li>확인 후 휴지통으로 이동</li>
+</ul>
+                """,
+                "children": {}
+            },
+            "🔍 검색 및 정렬": {
+                "content": """
+<h2>🔍 검색 및 정렬</h2>
+
+<h3>북 검색</h3>
+<ol>
+<li>왼쪽 상단 <strong>"북 검색"</strong> 입력창 클릭</li>
+<li>검색어 입력 (북 이름 기준)</li>
+<li>실시간으로 결과 필터링</li>
+<li>검색어 지우면 전체 목록 복원</li>
+</ol>
+
+<h3>페이지 검색</h3>
+<ol>
+<li>가운데 상단 <strong>"페이지 검색"</strong> 입력창 클릭</li>
+<li>검색어 입력 (페이지 이름 + 태그 기준)</li>
+<li>실시간으로 결과 필터링</li>
+<li>검색어 지우면 전체 목록 복원</li>
+</ol>
+
+<p><strong>💡 검색 팁:</strong></p>
+<ul>
+<li>부분 검색 지원 (예: "주인" 입력 시 "주인공" 검색됨)</li>
+<li>대소문자 구분 안함</li>
+<li>태그도 검색 대상에 포함</li>
+</ul>
+
+<h3>정렬 옵션</h3>
+<ul>
+<li><strong>오름차순 정렬:</strong> A-Z, ㄱ-ㅎ 순</li>
+<li><strong>내림차순 정렬:</strong> Z-A, ㅎ-ㄱ 순</li>
+<li><strong>즐겨찾기순:</strong> ❤️ 항목이 먼저</li>
+<li><strong>생성일순 (최신순):</strong> 최근 생성 순</li>
+<li><strong>생성일순 (오래된순):</strong> 오래된 순</li>
+<li><strong>커스텀 정렬:</strong> 드래그로 수동 정렬</li>
+</ul>
+
+<h3>커스텀 정렬 사용법</h3>
+<ol>
+<li>정렬 선택기에서 <strong>"커스텀 정렬"</strong> 선택</li>
+<li>항목을 <strong>드래그</strong>하여 원하는 위치로 이동</li>
+<li>순서가 자동으로 저장됨</li>
+<li>다른 정렬 방식 선택 시 커스텀 순서 해제</li>
+</ol>
+                """,
+                "children": {}
+            },
+            "🔢 다중 선택": {
+                "content": """
+<h2>🔢 다중 선택 및 일괄 작업</h2>
+
+<h3>다중 선택 방법</h3>
+<ul>
+<li><strong>Ctrl+클릭:</strong> 원하는 항목들을 하나씩 선택/해제</li>
+<li><strong>Shift+클릭:</strong> 첫 선택부터 클릭 위치까지 범위 선택</li>
+<li><strong>Ctrl+A:</strong> 현재 포커스된 리스트의 모든 항목 선택</li>
+</ul>
+
+<h3>다중 선택 시각적 표시</h3>
+<ul>
+<li>선택된 항목들은 <strong>하이라이트</strong>로 표시</li>
+<li>선택 개수가 상태바에 표시 (예: "3개 선택됨")</li>
+</ul>
+
+<h3>다중 북 작업</h3>
+<p><strong>다중 북 삭제:</strong></p>
+<ol>
+<li><strong>Ctrl+클릭</strong>으로 여러 북 선택</li>
+<li><strong>Delete</strong> 키</li>
+<li>확인 대화상자에서 일괄 삭제 확인</li>
+</ol>
+
+<p><strong>다중 북 선택 시 제한사항:</strong></p>
+<ul>
+<li>페이지 리스트가 숨겨짐</li>
+<li>편집 영역이 비활성화됨</li>
+<li>북별 개별 작업 불가</li>
+</ul>
+
+<h3>다중 페이지 작업</h3>
+<p><strong>다중 페이지 복제:</strong></p>
+<ol>
+<li><strong>Ctrl+클릭</strong>으로 여러 페이지 선택</li>
+<li><strong>Ctrl+D</strong></li>
+<li>선택된 모든 페이지가 복제됨</li>
+<li>마지막 복제된 페이지가 자동 선택됨</li>
+</ol>
+
+<p><strong>다중 페이지 삭제:</strong></p>
+<ol>
+<li><strong>Ctrl+클릭</strong>으로 여러 페이지 선택</li>
+<li><strong>Delete</strong> 키</li>
+<li>확인 대화상자에서 일괄 삭제 확인</li>
+</ol>
+
+<p><strong>다중 페이지 드래그:</strong></p>
+<ol>
+<li>여러 페이지 선택</li>
+<li>선택된 항목 중 하나를 <strong>드래그</strong></li>
+<li>선택된 모든 페이지가 함께 이동</li>
+</ol>
+                """,
+                "children": {}
+            },
+            "⌨️ 단축키": {
+                "content": """
+<h2>⌨️ 단축키</h2>
+
+<h3>페이지 관리 단축키</h3>
+<table border="1" style="border-collapse: collapse; width: 100%;">
+<tr style="background-color: rgba(255,255,255,0.1);">
+<th style="padding: 8px;">단축키</th>
+<th style="padding: 8px;">기능</th>
+<th style="padding: 8px;">설명</th>
+</tr>
+<tr><td style="padding: 8px;"><strong>Ctrl+N</strong></td><td style="padding: 8px;">새 페이지 추가</td><td style="padding: 8px;">현재 선택된 북에 새 페이지 생성</td></tr>
+<tr><td style="padding: 8px;"><strong>Ctrl+S</strong></td><td style="padding: 8px;">현재 페이지 저장</td><td style="padding: 8px;">편집 중인 페이지 내용 저장</td></tr>
+<tr><td style="padding: 8px;"><strong>Ctrl+D</strong></td><td style="padding: 8px;">페이지 복제</td><td style="padding: 8px;">선택된 페이지(들) 복제</td></tr>
+<tr><td style="padding: 8px;"><strong>Delete</strong></td><td style="padding: 8px;">삭제</td><td style="padding: 8px;">선택된 페이지/북 삭제</td></tr>
+<tr><td style="padding: 8px;"><strong>F2</strong></td><td style="padding: 8px;">이름 변경</td><td style="padding: 8px;">선택된 항목의 이름 변경</td></tr>
+</table>
+
+<h3>다중 선택 단축키</h3>
+<table border="1" style="border-collapse: collapse; width: 100%;">
+<tr style="background-color: rgba(255,255,255,0.1);">
+<th style="padding: 8px;">단축키</th>
+<th style="padding: 8px;">기능</th>
+<th style="padding: 8px;">설명</th>
+</tr>
+<tr><td style="padding: 8px;"><strong>Ctrl+클릭</strong></td><td style="padding: 8px;">개별 선택/해제</td><td style="padding: 8px;">원하는 항목들을 하나씩 선택</td></tr>
+<tr><td style="padding: 8px;"><strong>Shift+클릭</strong></td><td style="padding: 8px;">범위 선택</td><td style="padding: 8px;">첫 선택부터 클릭 위치까지 선택</td></tr>
+<tr><td style="padding: 8px;"><strong>Ctrl+A</strong></td><td style="padding: 8px;">전체 선택</td><td style="padding: 8px;">현재 리스트의 모든 항목 선택</td></tr>
+</table>
+
+<h3>마우스 조작</h3>
+<table border="1" style="border-collapse: collapse; width: 100%;">
+<tr style="background-color: rgba(255,255,255,0.1);">
+<th style="padding: 8px;">조작</th>
+<th style="padding: 8px;">기능</th>
+<th style="padding: 8px;">설명</th>
+</tr>
+<tr><td style="padding: 8px;"><strong>더블클릭</strong></td><td style="padding: 8px;">이름 변경</td><td style="padding: 8px;">페이지/북 이름 변경 모드</td></tr>
+<tr><td style="padding: 8px;"><strong>우클릭</strong></td><td style="padding: 8px;">컨텍스트 메뉴</td><td style="padding: 8px;">상황별 메뉴 표시</td></tr>
+<tr><td style="padding: 8px;"><strong>드래그</strong></td><td style="padding: 8px;">순서 변경</td><td style="padding: 8px;">커스텀 정렬 모드에서 순서 변경</td></tr>
+<tr><td style="padding: 8px;"><strong>다중 드래그</strong></td><td style="padding: 8px;">일괄 이동</td><td style="padding: 8px;">선택된 여러 항목 동시 이동</td></tr>
+</table>
+
+<h3>단축키 사용 팁</h3>
+<ul>
+<li>단축키는 해당 영역에 포커스가 있을 때 작동</li>
+<li><strong>Ctrl+S</strong> 사용 시 저장 완료 툴팁 표시</li>
+<li><strong>Delete</strong> 키는 현재 포커스된 리스트에 따라 북/페이지 삭제</li>
+<li><strong>F2</strong> 키도 포커스된 리스트에 따라 동작</li>
+</ul>
+                """,
+                "children": {}
+            },
+            "🎨 테마": {
+                "content": """
+<h2>🎨 테마 및 커스터마이징</h2>
+
+<h3>테마 변경하기</h3>
+<ol>
+<li>상단 <strong>☰ 메뉴</strong> 클릭</li>
+<li><strong>"테마"</strong> 하위 메뉴 선택</li>
+<li>원하는 테마 클릭</li>
+<li>즉시 적용됨</li>
+</ol>
+
+<h3>사용 가능한 테마</h3>
+<p><strong>기본 테마:</strong></p>
+<ul>
+<li>🌙 <strong>어두운 모드:</strong> 기본 다크 테마</li>
+<li>☀️ <strong>밝은 모드:</strong> 화이트 테마</li>
+</ul>
+
+<p><strong>컬러 테마:</strong></p>
+<ul>
+<li>🌊 <strong>파란 바다:</strong> 블루 계열</li>
+<li>🌲 <strong>숲속:</strong> 그린 계열</li>
+<li>🌌 <strong>보라 우주:</strong> 퍼플 계열</li>
+<li>🌅 <strong>황혼:</strong> 오렌지 계열</li>
+<li>🌸 <strong>벚꽃:</strong> 핑크 계열</li>
+<li>🍃 <strong>민트:</strong> 민트 계열</li>
+</ul>
+
+<p><strong>네온 테마:</strong></p>
+<ul>
+<li>⚡ <strong>블루 네온:</strong> 사이버펑크 블루</li>
+<li>💖 <strong>핑크 네온:</strong> 사이버펑크 핑크</li>
+</ul>
+
+<h3>테마 특징</h3>
+<ul>
+<li>모든 테마는 눈의 피로를 최소화하도록 설계</li>
+<li>텍스트 가독성 최우선 고려</li>
+<li>다크/라이트 모드 모두 지원</li>
+<li>테마 설정은 자동 저장됨</li>
+</ul>
+
+<h3>UI 커스터마이징</h3>
+<p><strong>창 크기 조절:</strong></p>
+<ul>
+<li>창 가장자리를 드래그하여 크기 조절</li>
+<li>모서리 드래그로 대각선 크기 조절</li>
+<li>최대화/복원 버튼 사용</li>
+</ul>
+
+<p><strong>패널 크기 조절:</strong></p>
+<ul>
+<li>패널 사이의 구분선을 드래그</li>
+<li>북 리스트, 페이지 리스트, 편집 영역 비율 조절</li>
+<li>설정이 자동 저장됨</li>
+</ul>
+
+<p><strong>창 이동:</strong></p>
+<ul>
+<li>타이틀 바를 드래그하여 창 이동</li>
+<li>더블클릭으로 최대화/복원</li>
+</ul>
+                """,
+                "children": {}
+            },
+                         "💾 백업 및 복원": {
+                 "content": """
+ <h2>💾 백업 및 복원</h2>
+ 
+ <h3>북 저장하기 (백업)</h3>
+ <ol>
+ <li>저장할 북 선택</li>
+ <li>상단 <strong>☰ 메뉴</strong> → <strong>"선택된 북 저장하기"</strong> 클릭</li>
+ <li>저장 위치와 파일명 지정</li>
+ <li><strong>".zip"</strong> 파일로 저장됨</li>
+ </ol>
+ 
+ <p><strong>저장 내용:</strong></p>
+ <ul>
+ <li>북의 모든 페이지 데이터</li>
+ <li>첨부된 모든 이미지 파일</li>
+ <li>북 설정 (이모지, 즐겨찾기 등)</li>
+ <li>페이지 순서 정보</li>
+ </ul>
+ 
+ <h3>북 불러오기 (복원)</h3>
+ <ol>
+ <li>상단 <strong>☰ 메뉴</strong> → <strong>"저장된 북 불러오기"</strong> 클릭</li>
+ <li>저장된 <strong>".zip"</strong> 파일 선택</li>
+ <li><strong>"열기"</strong> 클릭</li>
+ <li>자동으로 북과 페이지들이 복원됨</li>
+ </ol>
+ 
+ <p><strong>복원 특징:</strong></p>
+ <ul>
+ <li>기존 북과 이름이 같으면 자동으로 번호 추가</li>
+ <li>모든 이미지 파일도 함께 복원</li>
+ <li>페이지 순서와 설정 모두 유지</li>
+ </ul>
+ 
+ <h3>자동 저장 기능</h3>
+ <p><strong>실시간 저장:</strong></p>
+ <ul>
+ <li>페이지 내용 편집 시 자동으로 저장됨</li>
+ <li>프로그램 종료 시에도 자동 저장</li>
+ <li><strong>Ctrl+S</strong>로 수동 저장 가능</li>
+ </ul>
+ 
+ <h3>백업 전략 권장사항</h3>
+ <p><strong>정기 백업:</strong></p>
+ <ul>
+ <li>중요한 작업 후 즉시 북 저장하기 사용</li>
+ <li>주기적으로 전체 북 백업</li>
+ <li>버전별로 파일명에 날짜 포함 권장</li>
+ </ul>
+ 
+ <p><strong>백업 파일 관리:</strong></p>
+ <ul>
+ <li>클라우드 저장소에 백업 파일 보관</li>
+ <li>여러 위치에 중복 백업 권장</li>
+ <li>정기적으로 복원 테스트 수행</li>
+ </ul>
+ 
+ <h3>데이터 파일 위치</h3>
+ <ul>
+ <li><strong>메인 데이터:</strong> character_data.json</li>
+ <li><strong>UI 설정:</strong> ui_settings.json</li>
+ <li><strong>이미지 파일:</strong> images/ 폴더</li>
+ <li>이 파일들을 직접 백업해도 됨</li>
+ </ul>
+                 """,
+                 "children": {}
+             },
+            "🔧 고급 기능": {
+                "content": """
+<h2>🔧 고급 기능</h2>
+
+<h3>이미지 자동 정리</h3>
+<p><strong>기능 설명:</strong></p>
+<ul>
+<li>사용되지 않는 이미지 파일 자동 감지</li>
+<li>휴지통으로 안전하게 이동</li>
+<li>디스크 공간 절약</li>
+</ul>
+
+<p><strong>사용 방법:</strong></p>
+<ol>
+<li><strong>☰ 메뉴</strong> → <strong>"사용되지 않는 이미지 정리"</strong></li>
+<li>정리 대상 이미지 목록 확인</li>
+<li><strong>"예"</strong> 클릭하여 휴지통으로 이동</li>
+</ol>
+
+<h3>검색 고급 팁</h3>
+<p><strong>태그 활용:</strong></p>
+<ul>
+<li>페이지에 관련 태그 입력 (예: "주인공, 남성, 20대")</li>
+<li>검색 시 태그로도 검색 가능</li>
+<li>쉼표로 여러 태그 구분</li>
+</ul>
+
+<p><strong>검색 조합:</strong></p>
+<ul>
+<li>여러 단어 조합 검색 가능</li>
+<li>부분 검색 지원</li>
+<li>실시간 필터링으로 즉시 결과 확인</li>
+</ul>
+
+<h3>정렬 전략</h3>
+<p><strong>즐겨찾기 활용:</strong></p>
+<ul>
+<li>자주 사용하는 북/페이지를 즐겨찾기로 설정</li>
+<li>즐겨찾기순 정렬로 빠른 접근</li>
+<li>프로젝트별로 즐겨찾기 그룹화</li>
+</ul>
+
+<p><strong>커스텀 정렬:</strong></p>
+<ul>
+<li>작업 순서에 맞게 수동 정렬</li>
+<li>중요도 순으로 배치</li>
+<li>스토리 흐름에 맞는 순서 설정</li>
+</ul>
+
+<h3>효율적인 작업 흐름</h3>
+<p><strong>프로젝트 구성:</strong></p>
+<ol>
+<li>프로젝트별로 북 생성</li>
+<li>캐릭터/설정별로 페이지 분류</li>
+<li>태그로 세부 분류</li>
+<li>즐겨찾기로 중요 항목 표시</li>
+</ol>
+
+<p><strong>빠른 작업:</strong></p>
+<ul>
+<li>단축키 적극 활용</li>
+<li>다중 선택으로 일괄 작업</li>
+<li>검색으로 빠른 항목 찾기</li>
+<li>복제 기능으로 유사 항목 생성</li>
+</ul>
+
+<h3>페이지 잠금 활용</h3>
+<p><strong>사용 시나리오:</strong></p>
+<ul>
+<li>완성된 캐릭터 설정 보호</li>
+<li>실수로 삭제 방지</li>
+<li>중요한 레퍼런스 자료 보호</li>
+</ul>
+
+<p><strong>잠금 관리:</strong></p>
+<ul>
+<li>작업 완료 후 잠금 설정</li>
+<li>수정 필요 시 잠금 해제</li>
+<li>🔒 아이콘으로 잠금 상태 확인</li>
+</ul>
+                """,
+                "children": {}
+            },
+                         "❓ 문제 해결": {
+                 "content": """
+ <h2>❓ 문제 해결</h2>
+ 
+ <h3>일반적인 문제</h3>
+ <p><strong>Q: 프로그램이 시작되지 않아요</strong></p>
+ <p>A:</p>
+ <ul>
+ <li>Windows Defender나 백신 프로그램 확인</li>
+ <li>관리자 권한으로 실행 시도</li>
+ <li>최신 버전 다운로드 후 재설치</li>
+ </ul>
+ 
+ <p><strong>Q: 데이터가 사라졌어요</strong></p>
+ <p>A:</p>
+ <ul>
+ <li>character_data.json 파일 확인</li>
+ <li>이전에 저장한 ZIP 백업 파일이 있다면 불러오기</li>
+ <li>프로그램 재시작 후 확인</li>
+ </ul>
+ 
+ <p><strong>Q: 이미지가 표시되지 않아요</strong></p>
+ <p>A:</p>
+ <ul>
+ <li>images/ 폴더 존재 확인</li>
+ <li>이미지 파일 형식 확인 (PNG, JPG 등)</li>
+ <li>파일 경로에 특수문자 없는지 확인</li>
+ </ul>
+ 
+ <h3>성능 최적화</h3>
+ <p><strong>느린 실행 속도:</strong></p>
+ <ul>
+ <li>☰ 메뉴 → "사용되지 않는 이미지 정리" 사용</li>
+ <li>너무 큰 이미지 파일 크기 줄이기</li>
+ <li>페이지 수가 많다면 북 분할 고려</li>
+ </ul>
+ 
+ <p><strong>메모리 사용량:</strong></p>
+ <ul>
+ <li>프로그램 재시작으로 메모리 정리</li>
+ <li>불필요한 이미지 제거</li>
+ <li>다른 프로그램과 동시 실행 최소화</li>
+ </ul>
+ 
+ <h3>데이터 보호 방법</h3>
+ <p><strong>정기적인 백업:</strong></p>
+ <ul>
+ <li>중요한 북은 "선택된 북 저장하기"로 ZIP 파일 백업</li>
+ <li>여러 위치에 백업 파일 보관</li>
+ <li>정기적으로 백업 파일 복원 테스트</li>
+ </ul>
+ 
+ <p><strong>실시간 저장 활용:</strong></p>
+ <ul>
+ <li>편집 내용은 자동으로 저장됨</li>
+ <li>Ctrl+S로 수동 저장 가능</li>
+ <li>프로그램 종료 시 자동 저장</li>
+ </ul>
+ 
+ <h3>호환성 문제</h3>
+ <p><strong>Windows 버전:</strong></p>
+ <ul>
+ <li>Windows 10 이상 권장</li>
+ <li>Python 및 PySide6 환경 필요</li>
+ </ul>
+ 
+ <p><strong>파일 경로:</strong></p>
+ <ul>
+ <li>한글 경로 지원</li>
+ <li>특수문자는 피하는 것이 좋음</li>
+ <li>너무 긴 경로명 주의</li>
+ </ul>
+ 
+ <h3>연락처 및 지원</h3>
+ <p><strong>버그 신고:</strong></p>
+ <ul>
+ <li>구체적인 재현 방법 기술</li>
+ <li>스크린샷 첨부</li>
+ <li>시스템 환경 정보 포함</li>
+ </ul>
+ 
+ <p><strong>기능 제안:</strong></p>
+ <ul>
+ <li>사용 시나리오와 함께 제안</li>
+ <li>기존 기능과의 연관성 고려</li>
+ </ul>
+                 """,
+                 "children": {}
+             }
+        }
+        
+        # 트리 아이템 생성 및 내용 매핑
+        self.manual_content_map = {}
+        
+        for title, data in manual_data.items():
+            item = QTreeWidgetItem([title])
+            tree_widget.addTopLevelItem(item)
+            self.manual_content_map[item] = data["content"]
+            
+            # 자식 항목이 있다면 추가 (현재는 없음)
+            for child_title, child_data in data["children"].items():
+                child_item = QTreeWidgetItem([child_title])
+                item.addChild(child_item)
+                self.manual_content_map[child_item] = child_data["content"]
+        
+        # 트리 아이템 클릭 이벤트 연결
+        def on_item_clicked(item, column):
+            if item in self.manual_content_map:
+                content_area.setHtml(self.manual_content_map[item])
+        
+        tree_widget.itemClicked.connect(on_item_clicked)
+        
+        # 첫 번째 항목 기본 선택
+        if tree_widget.topLevelItemCount() > 0:
+            first_item = tree_widget.topLevelItem(0)
+            tree_widget.setCurrentItem(first_item)
+            content_area.setHtml(self.manual_content_map[first_item])
+        
+        # 레이아웃에 위젯 추가
+        layout.addWidget(tree_widget)
+        layout.addWidget(content_area)
+        
+        # 하단 버튼 영역
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        close_button = QPushButton("닫기")
+        close_button.clicked.connect(dialog.accept)
+        button_layout.addWidget(close_button)
+        
+        main_layout = QVBoxLayout()
+        main_layout.addLayout(layout)
+        main_layout.addLayout(button_layout)
+        
+        dialog.setLayout(main_layout)
         
         # 다이얼로그 표시
         dialog.exec()
