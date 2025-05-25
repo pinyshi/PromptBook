@@ -2240,13 +2240,51 @@ class PromptBook(QMainWindow):
         if not (0 <= self.current_index < len(self.state.characters)):
             QMessageBox.warning(self, "이미지 로드 실패", "먼저 페이지를 선택해 주세요.")
             return
+        
+        # 이미지를 images 폴더로 복사
+        try:
+            images_dir = get_images_directory()
             
-        # 이미지 파일 경로 저장
-        self.state.characters[self.current_index]["image_path"] = file_path
+            # 현재 페이지 이름으로 고유한 파일명 생성
+            page_name = self.state.characters[self.current_index].get("name", "page")
+            # 파일명에서 특수문자 제거
+            safe_page_name = "".join(c for c in page_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            if not safe_page_name:
+                safe_page_name = "page"
+            
+            # 파일 확장자 가져오기
+            _, ext = os.path.splitext(file_path)
+            if not ext:
+                ext = '.png'  # 기본 확장자
+            
+            # 대상 파일명 생성
+            dest_filename = f"{safe_page_name}{ext}"
+            dest_path = os.path.join(images_dir, dest_filename)
+            
+            # 파일명 중복 방지
+            counter = 1
+            while os.path.exists(dest_path):
+                dest_filename = f"{safe_page_name}_{counter:03d}{ext}"
+                dest_path = os.path.join(images_dir, dest_filename)
+                counter += 1
+            
+            # 이미지 파일 복사
+            shutil.copy2(file_path, dest_path)
+            
+            # 복사된 파일 경로 저장
+            self.state.characters[self.current_index]["image_path"] = dest_path
+            print(f"[DEBUG] 이미지 복사 완료: {file_path} -> {dest_path}")
+            
+        except Exception as e:
+            print(f"[ERROR] 이미지 복사 실패: {e}")
+            # 복사 실패 시 원본 경로 저장
+            self.state.characters[self.current_index]["image_path"] = file_path
+        
         self.edited = True
         
-        # 이미지 뷰 업데이트
-        self.update_image_view(file_path)
+        # 이미지 뷰 업데이트 (복사된 파일 또는 원본 파일)
+        stored_path = self.state.characters[self.current_index]["image_path"]
+        self.update_image_view(stored_path)
         
         # 버튼 상태 업데이트
         self.update_image_buttons_state()
@@ -2256,7 +2294,7 @@ class PromptBook(QMainWindow):
             self.state.books[self.current_book]["pages"] = self.state.characters
             self.save_to_file()
             
-        print(f"[DEBUG] 이미지 로드 완료: {file_path}")
+        print(f"[DEBUG] 이미지 로드 완료: {stored_path}")
 
     def load_character(self, index):
         if 0 <= index < len(self.state.characters):
@@ -3488,6 +3526,23 @@ class PromptBook(QMainWindow):
 
     def remove_preview_image(self):
         if 0 <= self.current_index < len(self.state.characters):
+            # 현재 이미지 파일 경로 가져오기
+            image_path = self.state.characters[self.current_index].get("image_path", "")
+            
+            # 이미지 파일을 휴지통으로 이동
+            if image_path and os.path.exists(image_path):
+                try:
+                    if send2trash:
+                        send2trash(image_path)
+                        print(f"[DEBUG] 이미지 파일을 휴지통으로 이동: {image_path}")
+                    else:
+                        # send2trash가 없으면 일반 삭제
+                        os.remove(image_path)
+                        print(f"[DEBUG] 이미지 파일 삭제: {image_path}")
+                except Exception as e:
+                    print(f"[ERROR] 이미지 파일 삭제 실패: {e}")
+            
+            # 데이터에서 이미지 경로 제거
             self.state.characters[self.current_index]["image_path"] = ""
             if self.current_book and self.current_book in self.state.books:
                 self.state.books[self.current_book]["pages"] = self.state.characters
@@ -3678,13 +3733,19 @@ class PromptBook(QMainWindow):
                 if char.get("name") in page_names:
                     pages_to_delete.append(i)
                     
-                    # 이미지 파일 삭제
+                    # 이미지 파일을 휴지통으로 이동
                     image_path = char.get("image_path")
                     if image_path and os.path.exists(image_path):
                         try:
-                            os.remove(image_path)
+                            if send2trash:
+                                send2trash(image_path)
+                                print(f"[DEBUG] 이미지 파일을 휴지통으로 이동: {image_path}")
+                            else:
+                                # send2trash가 없으면 일반 삭제
+                                os.remove(image_path)
+                                print(f"[DEBUG] 이미지 파일 삭제: {image_path}")
                         except Exception as e:
-                            print(f"이미지 파일 삭제 실패: {e}")
+                            print(f"[ERROR] 이미지 파일 삭제 실패: {e}")
             
             # 역순으로 삭제
             for i in reversed(pages_to_delete):
@@ -3904,14 +3965,20 @@ class PromptBook(QMainWindow):
         )
         
         if reply == QMessageBox.Yes:
-            # 이미지 파일이 있다면 삭제
+            # 이미지 파일이 있다면 휴지통으로 이동
             if "image_path" in self.state.characters[self.current_index]:
                 image_path = self.state.characters[self.current_index]["image_path"]
                 if os.path.exists(image_path):
                     try:
-                        os.remove(image_path)
+                        if send2trash:
+                            send2trash(image_path)
+                            print(f"[DEBUG] 이미지 파일을 휴지통으로 이동: {image_path}")
+                        else:
+                            # send2trash가 없으면 일반 삭제
+                            os.remove(image_path)
+                            print(f"[DEBUG] 이미지 파일 삭제: {image_path}")
                     except Exception as e:
-                        print(f"이미지 파일 삭제 실패: {e}")
+                        print(f"[ERROR] 이미지 파일 삭제 실패: {e}")
             
             # 페이지 삭제
             del self.state.characters[self.current_index]
