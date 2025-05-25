@@ -194,6 +194,10 @@ class PromptInput(QMainWindow):
         super().__init__()
         # 창 고정 상태 변수
         self.always_on_top = False
+        
+        # PyInstaller 임시 폴더 정리 에러 무시 설정
+        self.suppress_temp_cleanup_errors()
+        
         self.setup_ui()
         self.setup_autocomplete()
         self.setup_shortcuts()
@@ -320,6 +324,46 @@ class PromptInput(QMainWindow):
         status_text = "활성화" if self.always_on_top else "비활성화"
         self.statusBar().showMessage(f"창 맨 위에 고정: {status_text}")
         print(f"[DEBUG] 프롬프트 입력기 - 창 맨 위에 고정: {status_text}")
+    
+    def suppress_temp_cleanup_errors(self):
+        """PyInstaller 임시 폴더 정리 에러를 무시하도록 설정"""
+        try:
+            import tempfile
+            import atexit
+            import warnings
+            
+            # 임시 폴더 관련 경고 무시
+            warnings.filterwarnings("ignore", category=ResourceWarning)
+            warnings.filterwarnings("ignore", message=".*temporary directory.*")
+            
+            # PyInstaller 관련 임시 폴더 정리 에러 무시
+            if hasattr(sys, '_MEIPASS'):
+                # PyInstaller 환경에서 실행 중일 때
+                original_cleanup = tempfile._cleanup
+                
+                def silent_cleanup(*args, **kwargs):
+                    try:
+                        return original_cleanup(*args, **kwargs)
+                    except (OSError, PermissionError, FileNotFoundError):
+                        # 임시 폴더 정리 에러 무시
+                        pass
+                
+                tempfile._cleanup = silent_cleanup
+                
+                # atexit 핸들러도 에러 무시하도록 수정
+                def silent_exit_handler():
+                    try:
+                        # 기존 atexit 핸들러들 실행
+                        pass
+                    except (OSError, PermissionError, FileNotFoundError):
+                        # 종료 시 임시 폴더 정리 에러 무시
+                        pass
+                
+                atexit.register(silent_exit_handler)
+                
+        except Exception as e:
+            # 에러 무시 설정 자체가 실패해도 프로그램은 계속 실행
+            print(f"[DEBUG] 임시 폴더 에러 무시 설정 실패: {e}")
 
 
 class LogDialog(QDialog):
