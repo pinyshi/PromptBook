@@ -7,6 +7,13 @@ from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
 import os, json, csv, shutil, sys
 
+# 휴지통 기능을 위한 모듈 추가
+try:
+    from send2trash import send2trash
+except ImportError:
+    print("send2trash 모듈이 설치되지 않았습니다. pip install send2trash로 설치해 주세요.")
+    send2trash = None
+
 class ImageView(QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -714,7 +721,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.1.7"
+    VERSION = "v2.1.8"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -992,6 +999,14 @@ class PromptBook(QMainWindow):
         # 현재 테마 저장용 변수
         self.current_theme = "어두운 모드"
         
+        # 도구 메뉴 추가
+        tools_menu = menubar.addMenu("🔧 도구")
+        
+        # 이미지 정리 메뉴 항목 추가
+        cleanup_action = tools_menu.addAction("🗑️ 사용하지 않는 이미지 정리")
+        cleanup_action.triggered.connect(self.cleanup_unused_images)
+        cleanup_action.setToolTip("현재 페이지들에서 사용되지 않는 이미지를 휴지통으로 이동합니다")
+        
         # 정보 메뉴
         info_menu = menubar.addMenu("정보")
 
@@ -1181,8 +1196,14 @@ class PromptBook(QMainWindow):
         self.image_remove_btn.clicked.connect(self.remove_preview_image)
         self.image_remove_btn.setEnabled(False)
         
+        # 이미지 정리 버튼 추가
+        self.image_cleanup_btn = QPushButton("🧹 이미지 정리")
+        self.image_cleanup_btn.clicked.connect(self.cleanup_unused_images)
+        self.image_cleanup_btn.setToolTip("사용하지 않는 이미지를 휴지통으로 이동")
+        
         image_button_layout.addWidget(self.image_load_btn)
         image_button_layout.addWidget(self.image_remove_btn)
+        image_button_layout.addWidget(self.image_cleanup_btn)
         
         self.right_layout.addLayout(image_button_layout)
 
@@ -1859,12 +1880,18 @@ class PromptBook(QMainWindow):
         self.update_all_buttons_state()
 
     def save_to_file(self):
+        """파일 저장 시 자동으로 이미지 정리 실행"""
         print("[DEBUG] save_to_file 호출됨")
         if getattr(self, '_initial_loading', False):
             return
+        
         try:
             with open(self.SAVE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.state.books, f, ensure_ascii=False, indent=2)
+            
+            # 저장할 때마다 자동으로 이미지 정리 (백그라운드에서 실행)
+            self.cleanup_unused_images_silent()
+            
         except Exception as e:
             print(f"[ERROR] 저장 실패: {e}")
 
@@ -4823,6 +4850,136 @@ class PromptBook(QMainWindow):
         
         # 다이얼로그 표시
         dialog.exec()
+    
+    def cleanup_unused_images(self):
+        """사용되지 않는 이미지를 휴지통으로 이동합니다."""
+        if send2trash is None:
+            QMessageBox.warning(self, "오류", "send2trash 모듈이 설치되지 않았습니다.\npip install send2trash로 설치해 주세요.")
+            return
+            
+        # images 폴더가 존재하지 않으면 아무것도 안 함
+        images_dir = "images"
+        if not os.path.exists(images_dir):
+            return
+        
+        # 현재 사용 중인 이미지 경로들 수집
+        used_images = set()
+        for book_name, book_data in self.state.books.items():
+            pages = book_data.get("pages", [])
+            for page in pages:
+                image_path = page.get("image_path", "")
+                if image_path and os.path.exists(image_path):
+                    # 절대 경로로 변환하여 비교
+                    used_images.add(os.path.abspath(image_path))
+        
+        # images 폴더의 모든 이미지 파일 찾기
+        image_extensions = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif', '.webp'}
+        all_images = []
+        
+        for root, dirs, files in os.walk(images_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if os.path.splitext(file)[1].lower() in image_extensions:
+                    all_images.append(os.path.abspath(file_path))
+        
+        # 사용되지 않는 이미지 찾기
+        unused_images = []
+        for image_path in all_images:
+            if image_path not in used_images:
+                unused_images.append(image_path)
+        
+        if not unused_images:
+            QMessageBox.information(self, "정리 완료", "사용되지 않는 이미지가 없습니다.")
+            return
+        
+        # 사용자에게 확인
+        count = len(unused_images)
+        file_list = "\n".join([os.path.basename(path) for path in unused_images[:10]])
+        if count > 10:
+            file_list += f"\n... 및 {count - 10}개 더"
+            
+        reply = QMessageBox.question(
+            self,
+            "이미지 정리 확인",
+            f"사용되지 않는 이미지 {count}개를 휴지통으로 이동하시겠습니까?\n\n"
+            f"이동될 파일들:\n{file_list}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            success_count = 0
+            failed_files = []
+            
+            for image_path in unused_images:
+                try:
+                    send2trash(image_path)
+                    success_count += 1
+                    print(f"[DEBUG] 휴지통으로 이동: {image_path}")
+                except Exception as e:
+                    failed_files.append(os.path.basename(image_path))
+                    print(f"[ERROR] 휴지통 이동 실패: {image_path} - {e}")
+            
+            # 결과 보고
+            if failed_files:
+                QMessageBox.warning(
+                    self,
+                    "정리 부분 완료",
+                    f"{success_count}개의 이미지가 휴지통으로 이동되었습니다.\n"
+                    f"실패한 파일 {len(failed_files)}개:\n" + 
+                    "\n".join(failed_files[:5]) + 
+                    (f"\n... 및 {len(failed_files) - 5}개 더" if len(failed_files) > 5 else "")
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "정리 완료",
+                    f"{success_count}개의 사용되지 않는 이미지가 휴지통으로 이동되었습니다."
+                )
+
+    def cleanup_unused_images_silent(self):
+        """조용히 사용되지 않는 이미지를 휴지통으로 이동 (확인 대화상자 없음)"""
+        if send2trash is None:
+            return
+            
+        try:
+            # images 폴더가 존재하지 않으면 아무것도 안 함
+            images_dir = "images"
+            if not os.path.exists(images_dir):
+                return
+            
+            # 현재 사용 중인 이미지 경로들 수집
+            used_images = set()
+            for book_name, book_data in self.state.books.items():
+                pages = book_data.get("pages", [])
+                for page in pages:
+                    image_path = page.get("image_path", "")
+                    if image_path and os.path.exists(image_path):
+                        # 절대 경로로 변환하여 비교
+                        used_images.add(os.path.abspath(image_path))
+            
+            # images 폴더의 모든 이미지 파일 찾기
+            image_extensions = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif', '.webp'}
+            unused_images = []
+            
+            for root, dirs, files in os.walk(images_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    if os.path.splitext(file)[1].lower() in image_extensions:
+                        abs_path = os.path.abspath(file_path)
+                        if abs_path not in used_images:
+                            unused_images.append(abs_path)
+            
+            # 사용되지 않는 이미지를 휴지통으로 이동
+            for image_path in unused_images:
+                try:
+                    send2trash(image_path)
+                    print(f"[DEBUG] 자동 정리: 휴지통으로 이동 - {os.path.basename(image_path)}")
+                except Exception as e:
+                    print(f"[ERROR] 자동 정리 실패: {image_path} - {e}")
+                    
+        except Exception as e:
+            print(f"[ERROR] 자동 이미지 정리 중 오류: {e}")
     
     def show_shortcuts_help(self):
         """단축키 안내 다이얼로그 표시"""
