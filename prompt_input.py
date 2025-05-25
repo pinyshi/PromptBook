@@ -203,18 +203,22 @@ class PromptInput(QMainWindow):
         self.setWindowTitle(f"프롬프트 입력기 {self.VERSION}")
         self.setFixedSize(600, 300)
         
-        # 아이콘 설정 (실행 파일 위치 기준)
-        icon_path = os.path.join(get_app_directory(), "icon.ico")
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
-        else:
-            # 개발 환경에서는 현재 디렉토리의 아이콘 사용
-            if os.path.exists("icon.ico"):
-                self.setWindowIcon(QIcon("icon.ico"))
-            elif os.path.exists("icon.png"):
-                self.setWindowIcon(QIcon("icon.png"))
+        # 아이콘 설정 (PyInstaller 리소스 포함)
+        try:
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 exe에서는 내장된 아이콘 사용
+                # PyInstaller가 자동으로 설정한 아이콘을 그대로 사용
+                pass
             else:
-                print("[DEBUG] 아이콘 파일을 찾을 수 없습니다.")
+                # 개발 환경에서는 로컬 아이콘 파일 사용
+                if os.path.exists("icon.ico"):
+                    self.setWindowIcon(QIcon("icon.ico"))
+                elif os.path.exists("icon.png"):
+                    self.setWindowIcon(QIcon("icon.png"))
+                else:
+                    print("[DEBUG] 개발 환경: 아이콘 파일을 찾을 수 없습니다.")
+        except Exception as e:
+            print(f"[DEBUG] 아이콘 설정 실패: {e}")
         
         # 중앙 위젯
         central_widget = QWidget()
