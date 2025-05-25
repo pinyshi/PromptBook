@@ -670,7 +670,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.0.0.4"
+    VERSION = "v2.0.0.5"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -3462,8 +3462,25 @@ class PromptBook(QMainWindow):
 
     def setup_theme_actions(self):
         """테마 액션들을 미리 설정"""
+        # 테마별 이모지 매핑
+        theme_emojis = {
+            "어두운 모드": "🌙",
+            "밝은 모드": "☀️",
+            "파란 바다": "🌊",
+            "숲속": "🌲",
+            "보라 우주": "🌌",
+            "황혼": "🌅",
+            "벚꽃": "🌸",
+            "민트": "🍃",
+            "블루 네온": "⚡",
+            "핑크 네온": "💖"
+        }
+        
         for theme_name in self.THEMES.keys():
-            theme_action = QAction(theme_name, self)
+            emoji = theme_emojis.get(theme_name, "🎨")
+            display_name = f"{emoji} {theme_name}"
+            
+            theme_action = QAction(display_name, self)
             theme_action.setCheckable(True)
             theme_action.triggered.connect(lambda checked, name=theme_name: self.apply_theme(name))
             self.theme_group.addAction(theme_action)
