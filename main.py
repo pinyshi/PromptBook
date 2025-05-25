@@ -270,13 +270,9 @@ class ClickableLabel(QLabel):
     
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            # Ctrl이나 Shift 키가 눌린 상태에서는 즐겨찾기 토글하지 않고 선택만 처리
-            modifiers = event.modifiers()
-            if not (modifiers & (Qt.ControlModifier | Qt.ShiftModifier)):
-                self.clicked.emit()
-                event.accept()  # 즐겨찾기 토글한 경우 이벤트 소비
-                return
-        # Ctrl/Shift가 눌린 상태거나 다른 버튼인 경우 부모로 전파
+            self.clicked.emit()
+            event.accept()  # 이벤트 전파를 막아서 부모 리스트의 선택을 방지
+            return
         super().mousePressEvent(event)
 
 class PageItemWidget(QWidget):
@@ -353,13 +349,16 @@ class PageItemWidget(QWidget):
                         if parent.current_book:
                             parent.state.books[parent.current_book]["pages"] = parent.state.characters
                         
-                        # 정렬 적용 및 리스트 갱신
+                        # 정렬 적용 (이벤트 전파가 막혔으므로 선택 해제 불필요)
                         if not parent.sort_mode_custom:
                             current_mode = parent.sort_selector.currentText() if hasattr(parent, "sort_selector") else "오름차순 정렬"
                             from promptbook_features import sort_characters
                             parent.state.characters = sort_characters(parent.state.characters, current_mode)
+                            parent.refresh_character_list(selected_name=self.page_name)
+                            print(f"[DEBUG] 위젯에서 페이지 즐겨찾기 토글 후 정렬 완료: {self.page_name}")
+                        else:
+                            print(f"[DEBUG] 위젯에서 페이지 즐겨찾기 토글 완료 (커스텀): {self.page_name}")
                         
-                        parent.refresh_character_list(selected_name=self.page_name)
                         parent.save_to_file()
                         return
                 break
@@ -423,13 +422,13 @@ class BookItemWidget(QWidget):
                     is_favorite = not parent.state.books[self.book_name].get("favorite", False)
                     parent.state.books[self.book_name]["favorite"] = is_favorite
                     
-                    # 정렬 적용 및 리스트 갱신
+                    # 정렬 적용 (이벤트 전파가 막혔으므로 선택 해제 불필요)
                     if not parent.book_sort_custom:
-                        current_mode = parent.book_sort_selector.currentText() if hasattr(parent, "book_sort_selector") else "오름차순 정렬"
                         parent.handle_book_sort()
+                        print(f"[DEBUG] 위젯에서 북 즐겨찾기 토글 후 정렬 완료: {self.book_name}")
                     else:
-                        # 현재 위젯만 업데이트
                         self.set_favorite(is_favorite)
+                        print(f"[DEBUG] 위젯에서 북 즐겨찾기 토글 완료 (커스텀): {self.book_name}")
                     
                     parent.save_to_file()
                     return
@@ -721,7 +720,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.1.8"
+    VERSION = "v2.1.9"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -1306,36 +1305,36 @@ class PromptBook(QMainWindow):
         QToolTip.showText(self.copy_button.mapToGlobal(self.copy_button.rect().center()), "프롬프트가 복사되었습니다.")
 
     def toggle_favorite_star(self, item):
+        """페이지 즐겨찾기 토글"""
         print("[DEBUG] toggle_favorite_star 호출됨")
         name = item.data(Qt.UserRole)
         print(f"[DEBUG] 아이템 이름: {name}")
         
-        # 현재 정렬 모드 저장
-        current_mode = self.sort_selector.currentText() if hasattr(self, "sort_selector") else "기본 정렬"
-        print(f"[DEBUG] 현재 정렬 모드: {current_mode}")
-        
         # 캐릭터 찾기 및 즐겨찾기 토글
-        for i, char in enumerate(self.state.characters):
+        for char in self.state.characters:
             if char.get("name") == name:
-                print(f"[DEBUG] 캐릭터 찾음: {char}")
                 is_favorite = not char.get("favorite", False)
                 char["favorite"] = is_favorite
                 
+                # 위젯 업데이트
+                widget = self.char_list.itemWidget(item)
+                if isinstance(widget, PageItemWidget):
+                    widget.set_favorite(is_favorite)
+                
                 # 상태 업데이트
                 if self.current_book and self.current_book in self.state.books:
-                        self.state.books[self.current_book]["pages"] = self.state.characters
+                    self.state.books[self.current_book]["pages"] = self.state.characters
                 
-                # 정렬 적용
-                from promptbook_features import sort_characters
-                self.state.characters = sort_characters(self.state.characters, current_mode)
+                # 정렬 적용 (이벤트 전파가 막혔으므로 선택 해제 불필요)
+                if not self.sort_mode_custom:
+                    current_mode = self.sort_selector.currentText() if hasattr(self, "sort_selector") else "기본 정렬"
+                    from promptbook_features import sort_characters
+                    self.state.characters = sort_characters(self.state.characters, current_mode)
+                    self.refresh_character_list(selected_name=name)
+                    print(f"[DEBUG] 페이지 즐겨찾기 토글 후 정렬 완료: {name}")
+                else:
+                    print(f"[DEBUG] 페이지 즐겨찾기 토글 완료 (커스텀 모드): {name}")
                 
-                # 리스트 갱신 전 디버그 출력
-                print("[DEBUG] 정렬 후 캐릭터 순서:")
-                for c in self.state.characters:
-                    print(f"  - {c.get('name')} (즐겨찾기: {c.get('favorite', False)})")
-                
-                # 리스트 갱신
-                self.refresh_character_list(selected_name=name)
                 self.save_to_file()
                 break
 
@@ -3060,13 +3059,12 @@ class PromptBook(QMainWindow):
             if isinstance(widget, BookItemWidget):
                 widget.set_favorite(is_favorite)
             
-            # 정렬 적용
+            # 정렬 적용 (이벤트 전파가 막혔으므로 선택 해제 불필요)
             if not self.book_sort_custom:
-                current_mode = self.book_sort_selector.currentText()
                 self.handle_book_sort()
+                print(f"[DEBUG] 북 즐겨찾기 토글 후 정렬 완료: {name}")
             else:
-                # 커스텀 정렬 모드에서는 현재 위젯만 업데이트
-                self.refresh_book_list(selected_name=name)
+                print(f"[DEBUG] 북 즐겨찾기 토글 완료 (커스텀 모드): {name}")
             
             self.save_to_file()
 
@@ -3579,7 +3577,14 @@ class PromptBook(QMainWindow):
         # 상태 업데이트 및 저장
         if self.current_book and self.current_book in self.state.books:
             self.state.books[self.current_book]["pages"] = self.state.characters
-        self.refresh_character_list()
+        
+        # 복제된 페이지가 하나인 경우 해당 페이지 선택, 여러 개인 경우 마지막 페이지 선택
+        if new_pages:
+            selected_name = new_pages[-1]["name"]  # 마지막으로 복제된 페이지 선택
+            self.refresh_character_list(selected_name=selected_name)
+        else:
+            self.refresh_character_list()
+            
         self.save_to_file()
         
         # 복제 완료 메시지
