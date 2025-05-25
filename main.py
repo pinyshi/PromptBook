@@ -714,7 +714,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.1.6"
+    VERSION = "v2.1.7"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -1301,7 +1301,8 @@ class PromptBook(QMainWindow):
                 char["favorite"] = is_favorite
                 
                 # 상태 업데이트
-                self.state.books[self.current_book]["pages"] = self.state.characters
+                if self.current_book and self.current_book in self.state.books:
+                        self.state.books[self.current_book]["pages"] = self.state.characters
                 
                 # 정렬 적용
                 from promptbook_features import sort_characters
@@ -1328,7 +1329,8 @@ class PromptBook(QMainWindow):
                     new_order.append(char)
                     break
         self.state.characters = new_order
-        self.state.books[self.current_book]["pages"] = self.state.characters
+        if self.current_book and self.current_book in self.state.books:
+                self.state.books[self.current_book]["pages"] = self.state.characters
         print("[DEBUG] 새로운 순서로 저장됨")
         self.save_to_file()
 
@@ -1505,7 +1507,8 @@ class PromptBook(QMainWindow):
             data["tags"] = self.tag_input.text()
             data["desc"] = self.desc_input.toPlainText()
             data["prompt"] = self.prompt_input.toPlainText()
-            self.state.books[self.current_book]["pages"] = self.state.characters
+            if self.current_book and self.current_book in self.state.books:
+                    self.state.books[self.current_book]["pages"] = self.state.characters
             
             # 현재 아이템의 위젯 업데이트
             item = self.char_list.item(self.current_index)
@@ -1775,7 +1778,7 @@ class PromptBook(QMainWindow):
         self.update_all_buttons_state()
         
         # 상태가 변경되었으면 저장
-        if should_save:
+        if should_save and self.current_book and self.current_book in self.state.books:
             print("[DEBUG] 상태 저장")
             self.state.books[self.current_book]["pages"] = self.state.characters
             self.save_to_file()
@@ -1821,12 +1824,13 @@ class PromptBook(QMainWindow):
             self.state.characters = book_data.get("pages", [])
             
             # 현재 정렬 모드 적용 (커스텀 정렬이 아닌 경우)
-            if hasattr(self, 'sort_selector') and not self.sort_mode_custom and self.state.characters:
+            if hasattr(self, 'sort_selector') and not self.sort_mode_custom and self.state.characters and self.current_book in self.state.books:
                 current_sort_mode = self.sort_selector.currentText()
                 print(f"[DEBUG] 북 선택 시 정렬 적용: {current_sort_mode}")
                 from promptbook_features import sort_characters
                 self.state.characters = sort_characters(self.state.characters, current_sort_mode)
-                self.state.books[self.current_book]["pages"] = self.state.characters
+                if self.current_book and self.current_book in self.state.books:
+                    self.state.books[self.current_book]["pages"] = self.state.characters
             
             # 버튼 활성화
             self.add_button.setEnabled(True)
@@ -1951,7 +1955,7 @@ class PromptBook(QMainWindow):
         self.update_image_buttons_state()
         
         # 상태 저장
-        if self.current_book:
+        if self.current_book and self.current_book in self.state.books:
             self.state.books[self.current_book]["pages"] = self.state.characters
             self.save_to_file()
             
@@ -2158,7 +2162,8 @@ class PromptBook(QMainWindow):
         
         # 상태 저장
         if self.current_book in self.state.books:
-            self.state.books[self.current_book]["pages"] = self.state.characters
+            if self.current_book and self.current_book in self.state.books:
+                self.state.books[self.current_book]["pages"] = self.state.characters
             
             # 리스트 갱신 및 저장
             self.refresh_character_list(should_save=True)
@@ -2235,13 +2240,29 @@ class PromptBook(QMainWindow):
         print(f"[DEBUG] add_book 완료")  # 디버그 추가
 
     def save_selected_book(self):
-        """선택된 북을 zip 파일로 저장합니다."""
-        if not self.current_book:
-            QMessageBox.warning(self, "저장 실패", "선택된 북이 없습니다.")
-            return
-            
+        """선택된 북(들)을 zip 파일로 저장합니다."""
+        # 다중 선택된 북들 확인
+        selected_books = self.book_list.selectedItems()
+        book_names = []
+        
+        for item in selected_books:
+            book_name = item.data(Qt.UserRole)
+            if book_name:
+                book_names.append(book_name)
+        
+        # 선택된 북이 없으면 현재 북 사용
+        if not book_names:
+            if not self.current_book:
+                QMessageBox.warning(self, "저장 실패", "선택된 북이 없습니다.")
+                return
+            book_names = [self.current_book]
+        
         # 파일 저장 대화상자
-        default_name = f"{self.current_book}.zip"
+        if len(book_names) == 1:
+            default_name = f"{book_names[0]}.zip"
+        else:
+            default_name = f"북_모음_{len(book_names)}개.zip"
+            
         path, _ = QFileDialog.getSaveFileName(self, "북 저장", default_name, "Zip Files (*.zip)")
         if not path:
             return
@@ -2250,38 +2271,83 @@ class PromptBook(QMainWindow):
             from zipfile import ZipFile
             
             with ZipFile(path, 'w') as zipf:
-                # 현재 북 데이터 가져오기
-                book_data = self.state.books[self.current_book]
-                pages = book_data.get("pages", [])
-                
-                # 내보낼 데이터 준비
-                export_data = {
-                    "book_name": self.current_book,
-                    "emoji": book_data.get("emoji", "📕"),
-                    "pages": []
-                }
-                
-                # 각 페이지 처리
-                for i, page in enumerate(pages):
-                    page_copy = dict(page)
+                if len(book_names) == 1:
+                    # 단일 북 저장 (기존 형식)
+                    book_name = book_names[0]
+                    book_data = self.state.books[book_name]
+                    pages = book_data.get("pages", [])
                     
-                    # 이미지가 있으면 zip에 포함
-                    img_path = page.get("image_path")
-                    if img_path and os.path.exists(img_path):
-                        # zip 내부 경로 생성
-                        filename = f"images/{i}_{os.path.basename(img_path)}"
-                        zipf.write(img_path, filename)
-                        page_copy["image_path"] = filename
-                    else:
-                        page_copy["image_path"] = ""
+                    # 내보낼 데이터 준비
+                    export_data = {
+                        "book_name": book_name,
+                        "emoji": book_data.get("emoji", "📕"),
+                        "pages": []
+                    }
+                    
+                    # 각 페이지 처리
+                    for i, page in enumerate(pages):
+                        page_copy = dict(page)
                         
-                    export_data["pages"].append(page_copy)
+                        # 이미지가 있으면 zip에 포함
+                        img_path = page.get("image_path")
+                        if img_path and os.path.exists(img_path):
+                            # zip 내부 경로 생성
+                            filename = f"images/{i}_{os.path.basename(img_path)}"
+                            zipf.write(img_path, filename)
+                            page_copy["image_path"] = filename
+                        else:
+                            page_copy["image_path"] = ""
+                            
+                        export_data["pages"].append(page_copy)
+                    
+                    # 북 데이터를 JSON으로 저장
+                    zipf.writestr("book_data.json", json.dumps(export_data, ensure_ascii=False, indent=2))
+                    
+                else:
+                    # 다중 북 저장 (새 형식)
+                    export_data = {
+                        "format": "multiple_books",
+                        "books": []
+                    }
+                    
+                    # 각 북 처리
+                    for book_name in book_names:
+                        book_data = self.state.books[book_name]
+                        pages = book_data.get("pages", [])
+                        
+                        book_export = {
+                            "book_name": book_name,
+                            "emoji": book_data.get("emoji", "📕"),
+                            "pages": []
+                        }
+                        
+                        # 각 페이지 처리
+                        for i, page in enumerate(pages):
+                            page_copy = dict(page)
+                            
+                            # 이미지가 있으면 zip에 포함
+                            img_path = page.get("image_path")
+                            if img_path and os.path.exists(img_path):
+                                # zip 내부 경로 생성 (북 이름을 포함하여 중복 방지)
+                                filename = f"images/{book_name}_{i}_{os.path.basename(img_path)}"
+                                zipf.write(img_path, filename)
+                                page_copy["image_path"] = filename
+                            else:
+                                page_copy["image_path"] = ""
+                                
+                            book_export["pages"].append(page_copy)
+                        
+                        export_data["books"].append(book_export)
+                    
+                    # 다중 북 데이터를 JSON으로 저장
+                    zipf.writestr("books_data.json", json.dumps(export_data, ensure_ascii=False, indent=2))
                 
-                # 북 데이터를 JSON으로 저장
-                zipf.writestr("book_data.json", json.dumps(export_data, ensure_ascii=False, indent=2))
-                
-            QMessageBox.information(self, "저장 완료", f"'{self.current_book}' 북이 성공적으로 저장되었습니다.")
-            print(f"[DEBUG] 선택된 북 저장 완료: {self.current_book} -> {path}")
+            if len(book_names) == 1:
+                QMessageBox.information(self, "저장 완료", f"'{book_names[0]}' 북이 성공적으로 저장되었습니다.")
+                print(f"[DEBUG] 선택된 북 저장 완료: {book_names[0]} -> {path}")
+            else:
+                QMessageBox.information(self, "저장 완료", f"{len(book_names)}개의 북이 성공적으로 저장되었습니다.\n{', '.join(book_names[:3])}{' 외' if len(book_names) > 3 else ''}")
+                print(f"[DEBUG] 다중 북 저장 완료: {book_names} -> {path}")
             
         except Exception as e:
             QMessageBox.critical(self, "저장 실패", f"북 저장 중 오류가 발생했습니다:\n{str(e)}")
@@ -2304,20 +2370,26 @@ class PromptBook(QMainWindow):
             with ZipFile(path, 'r') as zipf:
                 zipf.extractall(temp_dir)
                 
-                # 새 형식 확인: book_data.json 파일
-                json_path = os.path.join(temp_dir, "book_data.json")
-                if os.path.exists(json_path):
-                    # 새 형식 처리
-                    self._load_new_format_book(temp_dir, json_path)
+                # 다중 북 형식 확인: books_data.json 파일
+                books_json_path = os.path.join(temp_dir, "books_data.json")
+                if os.path.exists(books_json_path):
+                    # 다중 북 형식 처리
+                    self._load_multiple_books_format(temp_dir, books_json_path)
                 else:
-                    # 기존 형식 확인: character_list.zip 구조
-                    json_files = [f for f in os.listdir(temp_dir) if f.endswith('.json')]
-                    if json_files:
-                        # 기존 형식 처리
-                        self._load_legacy_format_book(temp_dir, json_files)
+                    # 단일 북 형식 확인: book_data.json 파일
+                    json_path = os.path.join(temp_dir, "book_data.json")
+                    if os.path.exists(json_path):
+                        # 단일 북 형식 처리
+                        self._load_new_format_book(temp_dir, json_path)
                     else:
-                        QMessageBox.warning(self, "불러오기 실패", "올바른 북 파일이 아닙니다.")
-                        return
+                        # 기존 형식 확인: character_list.zip 구조
+                        json_files = [f for f in os.listdir(temp_dir) if f.endswith('.json')]
+                        if json_files:
+                            # 기존 형식 처리
+                            self._load_legacy_format_book(temp_dir, json_files)
+                        else:
+                            QMessageBox.warning(self, "불러오기 실패", "올바른 북 파일이 아닙니다.")
+                            return
                         
         except Exception as e:
             QMessageBox.critical(self, "불러오기 실패", f"북 불러오기 중 오류가 발생했습니다:\n{str(e)}")
@@ -2530,11 +2602,122 @@ class PromptBook(QMainWindow):
                 print(f"[DEBUG] 불러온 북에 정렬 적용: {current_sort_mode}")
                 from promptbook_features import sort_characters
                 self.state.characters = sort_characters(self.state.characters, current_sort_mode)
-                self.state.books[self.current_book]["pages"] = self.state.characters
+                if self.current_book and self.current_book in self.state.books:
+                    self.state.books[self.current_book]["pages"] = self.state.characters
                 self.refresh_character_list()
         
         # 데이터 저장
         self.save_to_file()
+
+    def _load_multiple_books_format(self, temp_dir, books_json_path):
+        """다중 북 형식 파일 불러오기 (books_data.json)"""
+        with open(books_json_path, 'r', encoding='utf-8') as f:
+            books_data = json.load(f)
+        
+        books_list = books_data.get("books", [])
+        if not books_list:
+            QMessageBox.warning(self, "불러오기 실패", "불러올 북이 없습니다.")
+            return
+        
+        existing_names = set(self.state.books.keys())
+        loaded_books = []
+        name_conflicts = []
+        
+        # 각 북에 대해 이름 중복 체크
+        for book_data in books_list:
+            original_name = book_data.get("book_name", "불러온 북")
+            if original_name in existing_names:
+                name_conflicts.append(original_name)
+        
+        # 이름 중복이 있는 경우 처리 방법 묻기
+        if name_conflicts:
+            msgBox = QMessageBox()
+            msgBox.setWindowTitle("북 이름 중복")
+            msgBox.setText(f"{len(name_conflicts)}개의 북 이름이 중복됩니다:")
+            msgBox.setInformativeText(f"{', '.join(name_conflicts[:3])}{' 외' if len(name_conflicts) > 3 else ''}\n\n어떻게 하시겠습니까?")
+            
+            overwrite_btn = msgBox.addButton("모두 덮어쓰기", QMessageBox.AcceptRole)
+            add_new_btn = msgBox.addButton("새 이름으로 추가", QMessageBox.ActionRole)
+            cancel_btn = msgBox.addButton("취소", QMessageBox.RejectRole)
+            
+            msgBox.setDefaultButton(cancel_btn)
+            msgBox.exec()
+            
+            if msgBox.clickedButton() == cancel_btn:
+                print("[DEBUG] 다중 북 불러오기 취소")
+                return
+            
+            overwrite_mode = msgBox.clickedButton() == overwrite_btn
+        else:
+            overwrite_mode = False
+        
+        # 각 북 처리
+        for book_data in books_list:
+            original_name = book_data.get("book_name", "불러온 북")
+            book_name = original_name
+            
+            # 이름 중복 처리
+            if original_name in existing_names:
+                if not overwrite_mode:
+                    # 새 이름으로 추가
+                    for i in range(1, 1000):
+                        candidate = f"{original_name} ({i})"
+                        if candidate not in existing_names:
+                            book_name = candidate
+                            break
+                    existing_names.add(book_name)
+            else:
+                existing_names.add(book_name)
+            
+            # 이미지 파일들을 images 폴더로 복사
+            pages = book_data.get("pages", [])
+            for page in pages:
+                rel_path = page.get("image_path")
+                if rel_path:
+                    full_path = os.path.join(temp_dir, rel_path)
+                    if os.path.exists(full_path):
+                        # images 폴더 생성
+                        os.makedirs("images", exist_ok=True)
+                        # 고유한 파일명 생성
+                        dest_filename = f"{book_name}_{os.path.basename(full_path)}"
+                        dest_path = os.path.join("images", dest_filename)
+                        
+                        # 파일명 중복 방지
+                        counter = 1
+                        while os.path.exists(dest_path):
+                            name, ext = os.path.splitext(dest_filename)
+                            dest_filename = f"{name}_{counter}{ext}"
+                            dest_path = os.path.join("images", dest_filename)
+                            counter += 1
+                        
+                        shutil.copy(full_path, dest_path)
+                        page["image_path"] = dest_path
+                    else:
+                        page["image_path"] = ""
+            
+            # 새 북을 books에 추가
+            emoji = book_data.get("emoji", "📕")
+            self.state.books[book_name] = {
+                "emoji": emoji,
+                "pages": pages
+            }
+            
+            self._add_book_to_ui(book_name, emoji)
+            loaded_books.append(book_name)
+            print(f"[DEBUG] 북 불러오기 완료: {book_name}")
+        
+        # 첫 번째 불러온 북 선택
+        if loaded_books:
+            first_book = loaded_books[0]
+            for i in range(self.book_list.count()):
+                item = self.book_list.item(i)
+                if item.data(Qt.UserRole) == first_book:
+                    self.book_list.setCurrentItem(item)
+                    self.on_book_selected(i)
+                    break
+        
+        QMessageBox.information(self, "불러오기 완료", f"{len(loaded_books)}개의 북이 성공적으로 불러와졌습니다.\n{', '.join(loaded_books[:3])}{' 외' if len(loaded_books) > 3 else ''}")
+        print(f"[DEBUG] 다중 북 형식 불러오기 완료: {loaded_books}")
 
     def add_character(self):
         if not self.current_book:
@@ -2566,7 +2749,8 @@ class PromptBook(QMainWindow):
             from promptbook_features import sort_characters
             self.state.characters = sort_characters(self.state.characters, self.sort_selector.currentText())
 
-        self.state.books[self.current_book]["pages"] = self.state.characters
+        if self.current_book and self.current_book in self.state.books:
+                self.state.books[self.current_book]["pages"] = self.state.characters
         self.refresh_character_list(selected_name=unique_name)
         
         # 새로 추가된 페이지 찾기
@@ -2703,8 +2887,9 @@ class PromptBook(QMainWindow):
                     widget.set_emoji(emoji)
                 
                 # 상태 저장
-                self.state.books[self.current_book]["pages"] = self.state.characters
-                self.save_to_file()
+                if self.current_book and self.current_book in self.state.books:
+                    self.state.books[self.current_book]["pages"] = self.state.characters
+                    self.save_to_file()
                 break
 
     def show_book_context_menu(self, position):
@@ -3023,7 +3208,8 @@ class PromptBook(QMainWindow):
     def remove_preview_image(self):
         if 0 <= self.current_index < len(self.state.characters):
             self.state.characters[self.current_index]["image_path"] = ""
-            self.state.books[self.current_book]["pages"] = self.state.characters
+            if self.current_book and self.current_book in self.state.books:
+                self.state.books[self.current_book]["pages"] = self.state.characters
             self.image_scene.clear()
             self.image_view.update_drop_hint_visibility()
             
@@ -3199,7 +3385,8 @@ class PromptBook(QMainWindow):
                 del self.state.characters[i]
             
             # 상태 업데이트
-            self.state.books[self.current_book]["pages"] = self.state.characters
+            if self.current_book and self.current_book in self.state.books:
+                self.state.books[self.current_book]["pages"] = self.state.characters
             
             # UI 업데이트
             self.refresh_character_list()
@@ -3267,7 +3454,8 @@ class PromptBook(QMainWindow):
             self.state.characters = sort_characters(self.state.characters, self.sort_selector.currentText())
         
         # 상태 업데이트 및 저장
-        self.state.books[self.current_book]["pages"] = self.state.characters
+        if self.current_book and self.current_book in self.state.books:
+            self.state.books[self.current_book]["pages"] = self.state.characters
         self.refresh_character_list(selected_name=base_name)
         self.save_to_file()
     
@@ -3362,7 +3550,8 @@ class PromptBook(QMainWindow):
             self.state.characters = sort_characters(self.state.characters, self.sort_selector.currentText())
         
         # 상태 업데이트 및 저장
-        self.state.books[self.current_book]["pages"] = self.state.characters
+        if self.current_book and self.current_book in self.state.books:
+            self.state.books[self.current_book]["pages"] = self.state.characters
         self.refresh_character_list()
         self.save_to_file()
         
@@ -3413,7 +3602,8 @@ class PromptBook(QMainWindow):
             
             # 페이지 삭제
             del self.state.characters[self.current_index]
-            self.state.books[self.current_book]["pages"] = self.state.characters
+            if self.current_book and self.current_book in self.state.books:
+                self.state.books[self.current_book]["pages"] = self.state.characters
             
             # UI 업데이트
             self.refresh_character_list()
