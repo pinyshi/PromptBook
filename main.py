@@ -940,7 +940,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.5"
+    VERSION = "v2.2.6"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -4027,10 +4027,13 @@ class PromptBook(QMainWindow):
             
             QPushButton:hover {{
                 background-color: {theme['button_hover']};
+                border: 1px solid {theme['primary']};
+                color: {theme['primary']};
             }}
             
             QPushButton:pressed {{
                 background-color: {theme['primary']};
+                color: {theme['background']};
             }}
             
             QPushButton:disabled {{
@@ -4567,6 +4570,24 @@ class PromptBook(QMainWindow):
         # 500ms 후에 저장 (연속 테마 변경 시 마지막 것만 저장)
         self._save_timer.start(500)
         
+        # 모든 버튼에 마우스 추적 활성화 (hover 효과를 위해)
+        self.enable_button_mouse_tracking()
+        
+    def enable_button_mouse_tracking(self):
+        """모든 QPushButton에 마우스 추적을 활성화하여 hover 효과가 제대로 작동하도록 합니다."""
+        try:
+            # 모든 QPushButton 찾기
+            buttons = self.findChildren(QPushButton)
+            for button in buttons:
+                # 마우스 추적 활성화
+                button.setMouseTracking(True)
+                # 속성 업데이트 강제 실행
+                button.setAttribute(Qt.WA_Hover, True)
+                button.update()
+            
+            print(f"[INFO] {len(buttons)}개 버튼에 마우스 추적 활성화 완료")
+        except Exception as e:
+            print(f"[ERROR] 버튼 마우스 추적 활성화 실패: {e}")
 
     
     def apply_custom_theme(self):
@@ -4866,6 +4887,7 @@ class PromptBook(QMainWindow):
         """커스텀 테마 투명도 조절 다이얼로그"""
         try:
             from PySide6.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog
+            from PySide6.QtCore import QEvent, QObject
             
             dialog = QDialog(self)
             dialog.setWindowTitle("커스텀 테마 투명도 조절")
@@ -4875,6 +4897,7 @@ class PromptBook(QMainWindow):
             current_theme = getattr(self, 'current_theme', '어두운 모드')
             theme = self.THEMES.get(current_theme, self.THEMES['어두운 모드'])
             
+            # 대화상자 기본 스타일만 적용
             dialog.setStyleSheet(f"""
                 QDialog {{
                     background-color: {theme['background']};
@@ -4886,26 +4909,6 @@ class PromptBook(QMainWindow):
                     color: {theme['text']};
                     background-color: transparent;
                     font-weight: bold;
-                }}
-                QPushButton {{
-                    background-color: {theme['button']};
-                    border: 2px solid {theme['border']};
-                    color: {theme['text']};
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    font-size: 13px;
-                    min-width: 80px;
-                }}
-                QPushButton:hover {{
-                    background-color: {theme['button_hover']};
-                    border: 2px solid {theme['primary']};
-                    color: {theme['primary']};
-                }}
-                QPushButton:pressed {{
-                    background-color: {theme['primary']};
-                    color: {theme['background']};
-                    border: 2px solid {theme['primary']};
                 }}
                 QSlider::groove:horizontal {{
                     border: 1px solid {theme['border']};
@@ -4954,18 +4957,94 @@ class PromptBook(QMainWindow):
             transparency_slider.valueChanged.connect(on_transparency_changed)
             layout.addWidget(transparency_slider)
             
+            # 버튼 스타일 정의
+            button_style_normal = f"""
+                QPushButton {{
+                    background-color: {theme['button']};
+                    border: 2px solid {theme['border']};
+                    color: {theme['text']};
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    font-size: 9pt;
+                    min-width: 70px;
+                    min-height: 25px;
+                }}
+            """
+            
+            button_style_hover = f"""
+                QPushButton {{
+                    background-color: {theme['button_hover']};
+                    border: 2px solid {theme['primary']};
+                    color: {theme['primary']};
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    font-size: 9pt;
+                    min-width: 70px;
+                    min-height: 25px;
+                }}
+            """
+            
+            button_style_pressed = f"""
+                QPushButton {{
+                    background-color: {theme['primary']};
+                    border: 2px solid {theme['primary']};
+                    color: {theme['background']};
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    font-size: 9pt;
+                    min-width: 70px;
+                    min-height: 25px;
+                }}
+            """
+            
+            # 통합된 버튼 스타일 (hover와 pressed 포함)
+            button_style_complete = f"""
+                QPushButton {{
+                    background-color: {theme['button']};
+                    border: 2px solid {theme['border']};
+                    color: {theme['text']};
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    font-size: 9pt;
+                    min-width: 70px;
+                    min-height: 25px;
+                }}
+                QPushButton:hover {{
+                    background-color: {theme['button_hover']} !important;
+                    border: 2px solid {theme['primary']} !important;
+                    color: {theme['primary']} !important;
+                }}
+                QPushButton:pressed {{
+                    background-color: {theme['primary']} !important;
+                    border: 2px solid {theme['primary']} !important;
+                    color: {theme['background']} !important;
+                }}
+            """
+            
+            # 버튼 생성 함수
+            def create_hover_button(text):
+                button = QPushButton(text)
+                button.setStyleSheet(button_style_complete)
+                # 마우스 추적 활성화
+                button.setMouseTracking(True)
+                return button
+            
             # 프리셋 버튼들
             preset_layout = QHBoxLayout()
             
-            low_button = QPushButton("낮음 (20%)")
+            low_button = create_hover_button("낮음 (20%)")
             low_button.clicked.connect(lambda: transparency_slider.setValue(20))
             preset_layout.addWidget(low_button)
             
-            medium_button = QPushButton("중간 (50%)")
+            medium_button = create_hover_button("중간 (50%)")
             medium_button.clicked.connect(lambda: transparency_slider.setValue(50))
             preset_layout.addWidget(medium_button)
             
-            high_button = QPushButton("높음 (80%)")
+            high_button = create_hover_button("높음 (80%)")
             high_button.clicked.connect(lambda: transparency_slider.setValue(80))
             preset_layout.addWidget(high_button)
             
@@ -4974,11 +5053,11 @@ class PromptBook(QMainWindow):
             # 버튼들
             button_layout = QHBoxLayout()
             
-            reset_button = QPushButton("기본값 (50%)")
+            reset_button = create_hover_button("기본값 (50%)")
             reset_button.clicked.connect(lambda: transparency_slider.setValue(50))
             button_layout.addWidget(reset_button)
             
-            close_button = QPushButton("닫기")
+            close_button = create_hover_button("닫기")
             close_button.clicked.connect(dialog.accept)
             button_layout.addWidget(close_button)
             
@@ -5119,13 +5198,25 @@ class PromptBook(QMainWindow):
             
             # 버튼들 - 사용자 설정 투명도 - 10% (더 투명하게)
             button_transparency = max(transparency - 0.10, 0.05)
+            button_hover_transparency = min(button_transparency + 0.15, 0.95)  # hover 시 더 진하게
             button_style = f"""
-                background-color: rgba({self.hex_to_rgba(theme['button'])}, {button_transparency});
-                border: 1px solid {theme['border']};
-                color: {theme['text']};
-                padding: 6px 12px;
-                border-radius: 3px;
-                font-weight: bold;
+                QPushButton {{
+                    background-color: rgba({self.hex_to_rgba(theme['button'])}, {button_transparency});
+                    border: 1px solid {theme['border']};
+                    color: {theme['text']};
+                    padding: 6px 12px;
+                    border-radius: 3px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: rgba({self.hex_to_rgba(theme['button_hover'])}, {button_hover_transparency});
+                    border: 1px solid {theme['primary']};
+                    color: {theme['primary']};
+                }}
+                QPushButton:pressed {{
+                    background-color: rgba({self.hex_to_rgba(theme['primary'])}, {button_hover_transparency});
+                    color: {theme['background']};
+                }}
             """
             
             # 모든 QPushButton 찾아서 적용
@@ -5140,11 +5231,17 @@ class PromptBook(QMainWindow):
             
             # 드롭다운 메뉴 - 사용자 설정 투명도
             combo_style = f"""
-                background-color: rgba({self.hex_to_rgba(theme['button'])}, {transparency});
-                border: 1px solid {theme['border']};
-                color: {theme['text']};
-                padding: 4px 8px;
-                border-radius: 3px;
+                QComboBox {{
+                    background-color: rgba({self.hex_to_rgba(theme['button'])}, {transparency});
+                    border: 1px solid {theme['border']};
+                    color: {theme['text']};
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                }}
+                QComboBox:hover {{
+                    background-color: rgba({self.hex_to_rgba(theme['button_hover'])}, {button_hover_transparency});
+                    border: 1px solid {theme['primary']};
+                }}
             """
             
             # 모든 QComboBox 찾아서 적용
