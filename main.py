@@ -6,9 +6,6 @@ from promptbook_utils import PromptBookUtils
 from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
 import os, json, csv, shutil, sys
-import logging
-import traceback
-from datetime import datetime
 
 # AI 테스터 모듈 import (개발 중)
 # try:
@@ -1113,7 +1110,10 @@ class PromptBook(QMainWindow):
         self._initial_loading = True
         self.sort_mode_custom = False
         self.book_sort_custom = False  # 북 정렬 모드 추가
-        
+
+        # 창 고정 상태 변수 추가
+        self.always_on_top = False
+
         # UI 관련 변수 초기화
         self.book_list = None
         self.char_list = None
@@ -1828,7 +1828,9 @@ class PromptBook(QMainWindow):
             "book_sort_custom": getattr(self, "book_sort_custom", False),
             "current_theme": getattr(self, "current_theme", "어두운 모드"),
             "custom_background_image": getattr(self, "custom_background_image", None),
-            "custom_transparency_level": getattr(self, "custom_transparency_level", 0.5)
+            "custom_transparency_level": getattr(self, "custom_transparency_level", 0.5),
+            "custom_image_brightness": getattr(self, "custom_image_brightness", 50),
+            "always_on_top": getattr(self, "always_on_top", False)
         }
         try:
             with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
@@ -1871,6 +1873,12 @@ class PromptBook(QMainWindow):
                 
                 # 커스텀 투명도 설정 복원
                 self.custom_transparency_level = settings.get("custom_transparency_level", 0.5)
+                
+                # 커스텀 이미지 밝기 설정 복원
+                self.custom_image_brightness = settings.get("custom_image_brightness", 50)
+                
+                # 창 고정 상태 복원
+                self.always_on_top = settings.get("always_on_top", False)
             
         except Exception as e:
             print(f"[ERROR] 초기 UI 설정 불러오기 실패: {e}")
@@ -1933,6 +1941,12 @@ class PromptBook(QMainWindow):
                         from promptbook_features import sort_characters
                         self.state.characters = sort_characters(self.state.characters, sort_mode)
                         self.refresh_character_list()
+                
+                # 창 고정 상태 복원
+                if hasattr(self, 'always_on_top') and self.always_on_top:
+                    current_flags = self.windowFlags()
+                    self.setWindowFlags(current_flags | Qt.WindowStaysOnTopHint)
+                    self.show()
                         
         except Exception as e:
             print(f"[ERROR] UI 설정 불러오기 실패: {e}")
@@ -4685,6 +4699,9 @@ class PromptBook(QMainWindow):
             # 배경 이미지 저장
             self.background_pixmap = pixmap
             
+            # 이미지 밝기 조절 적용
+            self.apply_image_brightness()
+            
             # 중앙 위젯을 투명하게 설정
             central_widget = self.centralWidget()
             if central_widget:
@@ -4773,9 +4790,12 @@ class PromptBook(QMainWindow):
             window_width = self.width()
             window_height = self.height()
             
+            # 밝기 조절된 이미지가 있으면 사용, 없으면 원본 사용
+            source_pixmap = getattr(self, 'adjusted_background_pixmap', self.background_pixmap)
+            
             # 이미지 원본 크기
-            image_width = self.background_pixmap.width()
-            image_height = self.background_pixmap.height()
+            image_width = source_pixmap.width()
+            image_height = source_pixmap.height()
             
             # 윈도우를 완전히 채우면서 비율 유지 (crop 방식)
             scale_width = window_width / image_width
@@ -4796,7 +4816,7 @@ class PromptBook(QMainWindow):
                 # 단계적 스케일링: 먼저 50%로 축소 후 최종 크기로 축소
                 intermediate_width = int(image_width * 0.5)
                 intermediate_height = int(image_height * 0.5)
-                intermediate_pixmap = self.background_pixmap.scaled(
+                intermediate_pixmap = source_pixmap.scaled(
                     intermediate_width, intermediate_height,
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation
@@ -4808,7 +4828,7 @@ class PromptBook(QMainWindow):
                 )
             else:
                 # 일반 스케일링
-                scaled_pixmap = self.background_pixmap.scaled(
+                scaled_pixmap = source_pixmap.scaled(
                     scaled_width, scaled_height,
                     Qt.KeepAspectRatio,  # 비율 유지
                     Qt.SmoothTransformation
@@ -4884,20 +4904,23 @@ class PromptBook(QMainWindow):
             QMessageBox.critical(self, "오류", f"윈도우 투명도 조절 실패: {e}")
 
     def adjust_custom_theme_transparency(self):
-        """커스텀 테마 투명도 조절 다이얼로그"""
+        """커스텀 테마 투명도 및 이미지 밝기 조절 다이얼로그"""
         try:
             from PySide6.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog
             from PySide6.QtCore import QEvent, QObject
             
             dialog = QDialog(self)
-            dialog.setWindowTitle("커스텀 테마 투명도 조절")
-            dialog.setFixedSize(350, 200)
+            dialog.setWindowTitle("커스텀 테마 설정")
+            dialog.setFixedSize(400, 300)
+            
+            # 투명도 조절창은 커스텀 테마 영향을 받지 않도록 고정 스타일 적용
+            dialog.setAttribute(Qt.WA_TranslucentBackground, False)
             
             # 현재 테마 적용
             current_theme = getattr(self, 'current_theme', '어두운 모드')
             theme = self.THEMES.get(current_theme, self.THEMES['어두운 모드'])
             
-            # 대화상자 기본 스타일만 적용
+            # 대화상자 고정 스타일 (투명도 영향 없음)
             dialog.setStyleSheet(f"""
                 QDialog {{
                     background-color: {theme['background']};
@@ -4907,7 +4930,7 @@ class PromptBook(QMainWindow):
                 }}
                 QLabel {{
                     color: {theme['text']};
-                    background-color: transparent;
+                    background-color: {theme['background']};
                     font-weight: bold;
                 }}
                 QSlider::groove:horizontal {{
@@ -4923,95 +4946,16 @@ class PromptBook(QMainWindow):
                     margin: -5px 0;
                     border-radius: 9px;
                 }}
-            """)
-            
-            layout = QVBoxLayout(dialog)
-            layout.setSpacing(15)
-            layout.setContentsMargins(20, 20, 20, 20)
-            
-            # 설명 라벨
-            desc_label = QLabel("커스텀 테마의 UI 요소 투명도를 조절합니다")
-            desc_label.setAlignment(Qt.AlignCenter)
-            desc_label.setStyleSheet("font-size: 12px; margin-bottom: 10px;")
-            layout.addWidget(desc_label)
-            
-            # 현재 투명도 표시
-            current_transparency = self.custom_transparency_level
-            transparency_label = QLabel(f"현재 투명도: {int(current_transparency * 100)}%")
-            transparency_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(transparency_label)
-            
-            # 투명도 슬라이더
-            transparency_slider = QSlider(Qt.Horizontal)
-            transparency_slider.setMinimum(5)   # 최소 5% (완전 투명하면 안 보임)
-            transparency_slider.setMaximum(95)  # 최대 95% (완전 불투명하면 배경 이미지가 안 보임)
-            transparency_slider.setValue(int(current_transparency * 100))
-            
-            def on_transparency_changed(value):
-                self.custom_transparency_level = value / 100.0
-                transparency_label.setText(f"현재 투명도: {value}%")
-                # 실시간으로 투명도 적용
-                if self.current_theme == "커스텀 테마":
-                    self.apply_custom_theme_transparency_new()
-            
-            transparency_slider.valueChanged.connect(on_transparency_changed)
-            layout.addWidget(transparency_slider)
-            
-            # 버튼 스타일 정의
-            button_style_normal = f"""
                 QPushButton {{
-                    background-color: {theme['button']};
-                    border: 2px solid {theme['border']};
-                    color: {theme['text']};
-                    padding: 8px 16px;
-                    border-radius: 6px;
+                    background-color: {theme['button']} !important;
+                    border: 2px solid {theme['border']} !important;
+                    color: {theme['text']} !important;
+                    padding: 6px 12px;
+                    border-radius: 4px;
                     font-weight: bold;
-                    font-size: 9pt;
-                    min-width: 70px;
-                    min-height: 25px;
-                }}
-            """
-            
-            button_style_hover = f"""
-                QPushButton {{
-                    background-color: {theme['button_hover']};
-                    border: 2px solid {theme['primary']};
-                    color: {theme['primary']};
-                    padding: 8px 16px;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    font-size: 9pt;
-                    min-width: 70px;
-                    min-height: 25px;
-                }}
-            """
-            
-            button_style_pressed = f"""
-                QPushButton {{
-                    background-color: {theme['primary']};
-                    border: 2px solid {theme['primary']};
-                    color: {theme['background']};
-                    padding: 8px 16px;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    font-size: 9pt;
-                    min-width: 70px;
-                    min-height: 25px;
-                }}
-            """
-            
-            # 통합된 버튼 스타일 (hover와 pressed 포함)
-            button_style_complete = f"""
-                QPushButton {{
-                    background-color: {theme['button']};
-                    border: 2px solid {theme['border']};
-                    color: {theme['text']};
-                    padding: 8px 16px;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    font-size: 9pt;
-                    min-width: 70px;
-                    min-height: 25px;
+                    font-size: 8pt;
+                    min-width: 50px;
+                    min-height: 18px;
                 }}
                 QPushButton:hover {{
                     background-color: {theme['button_hover']} !important;
@@ -5023,12 +4967,75 @@ class PromptBook(QMainWindow):
                     border: 2px solid {theme['primary']} !important;
                     color: {theme['background']} !important;
                 }}
-            """
+            """)
             
-            # 버튼 생성 함수
+            layout = QVBoxLayout(dialog)
+            layout.setSpacing(15)
+            layout.setContentsMargins(20, 20, 20, 20)
+            
+            # 설명 라벨
+            desc_label = QLabel("커스텀 테마의 UI 투명도와 배경 이미지 밝기를 조절합니다\n(밝기는 브라이트니스 방식으로 적용됩니다)")
+            desc_label.setAlignment(Qt.AlignCenter)
+            desc_label.setStyleSheet("font-size: 12px; margin-bottom: 10px;")
+            layout.addWidget(desc_label)
+            
+            # === UI 투명도 섹션 ===
+            transparency_section = QVBoxLayout()
+            
+            # 현재 투명도 표시
+            current_transparency = self.custom_transparency_level
+            transparency_label = QLabel(f"UI 투명도: {int(current_transparency * 100)}%")
+            transparency_label.setAlignment(Qt.AlignCenter)
+            transparency_section.addWidget(transparency_label)
+            
+            # 투명도 슬라이더
+            transparency_slider = QSlider(Qt.Horizontal)
+            transparency_slider.setMinimum(5)   # 최소 5% (완전 투명하면 안 보임)
+            transparency_slider.setMaximum(95)  # 최대 95% (완전 불투명하면 배경 이미지가 안 보임)
+            transparency_slider.setValue(int(current_transparency * 100))
+            transparency_section.addWidget(transparency_slider)
+            
+            layout.addLayout(transparency_section)
+            
+            # === 이미지 밝기 섹션 ===
+            brightness_section = QVBoxLayout()
+            
+            # 현재 밝기 표시 (기본값 50)
+            current_brightness = getattr(self, 'custom_image_brightness', 50)
+            brightness_label = QLabel(f"이미지 밝기: {current_brightness} (50=원본)")
+            brightness_label.setAlignment(Qt.AlignCenter)
+            brightness_section.addWidget(brightness_label)
+            
+            # 밝기 슬라이더
+            brightness_slider = QSlider(Qt.Horizontal)
+            brightness_slider.setMinimum(0)    # 0 = 매우 어둡게 (30% 밝기)
+            brightness_slider.setMaximum(100)  # 100 = 매우 밝게 (170% 밝기)
+            brightness_slider.setValue(current_brightness)
+            brightness_section.addWidget(brightness_slider)
+            
+            layout.addLayout(brightness_section)
+            
+            # 슬라이더 이벤트 핸들러
+            def on_transparency_changed(value):
+                self.custom_transparency_level = value / 100.0
+                transparency_label.setText(f"UI 투명도: {value}%")
+                # 실시간으로 투명도 적용
+                if self.current_theme == "커스텀 테마":
+                    self.apply_custom_theme_transparency_new()
+            
+            def on_brightness_changed(value):
+                self.custom_image_brightness = value
+                brightness_label.setText(f"이미지 밝기: {value} (50=원본)")
+                # 실시간으로 밝기 적용
+                if self.current_theme == "커스텀 테마":
+                    self.apply_image_brightness()
+            
+            transparency_slider.valueChanged.connect(on_transparency_changed)
+            brightness_slider.valueChanged.connect(on_brightness_changed)
+            
+            # 버튼 생성 함수 (스타일은 대화상자에서 일괄 적용)
             def create_hover_button(text):
                 button = QPushButton(text)
-                button.setStyleSheet(button_style_complete)
                 # 마우스 추적 활성화
                 button.setMouseTracking(True)
                 return button
@@ -5036,16 +5043,16 @@ class PromptBook(QMainWindow):
             # 프리셋 버튼들
             preset_layout = QHBoxLayout()
             
-            low_button = create_hover_button("낮음 (20%)")
-            low_button.clicked.connect(lambda: transparency_slider.setValue(20))
+            low_button = create_hover_button("낮음")
+            low_button.clicked.connect(lambda: (transparency_slider.setValue(20), brightness_slider.setValue(30)))
             preset_layout.addWidget(low_button)
             
-            medium_button = create_hover_button("중간 (50%)")
-            medium_button.clicked.connect(lambda: transparency_slider.setValue(50))
+            medium_button = create_hover_button("중간")
+            medium_button.clicked.connect(lambda: (transparency_slider.setValue(50), brightness_slider.setValue(50)))
             preset_layout.addWidget(medium_button)
             
-            high_button = create_hover_button("높음 (80%)")
-            high_button.clicked.connect(lambda: transparency_slider.setValue(80))
+            high_button = create_hover_button("높음")
+            high_button.clicked.connect(lambda: (transparency_slider.setValue(80), brightness_slider.setValue(70)))
             preset_layout.addWidget(high_button)
             
             layout.addLayout(preset_layout)
@@ -5053,8 +5060,8 @@ class PromptBook(QMainWindow):
             # 버튼들
             button_layout = QHBoxLayout()
             
-            reset_button = create_hover_button("기본값 (50%)")
-            reset_button.clicked.connect(lambda: transparency_slider.setValue(50))
+            reset_button = create_hover_button("기본값")
+            reset_button.clicked.connect(lambda: (transparency_slider.setValue(50), brightness_slider.setValue(50)))
             button_layout.addWidget(reset_button)
             
             close_button = create_hover_button("닫기")
@@ -5069,8 +5076,56 @@ class PromptBook(QMainWindow):
             self.save_ui_settings()
             
         except Exception as e:
-            print(f"[ERROR] 커스텀 테마 투명도 조절 실패: {e}")
-            QMessageBox.critical(self, "오류", f"커스텀 테마 투명도 조절 실패: {e}")
+            print(f"[ERROR] 커스텀 테마 설정 조절 실패: {e}")
+            QMessageBox.critical(self, "오류", f"커스텀 테마 설정 조절 실패: {e}")
+
+    def apply_image_brightness(self):
+        """이미지 밝기 조절 적용 - 브라이트니스 방식"""
+        try:
+            if not hasattr(self, 'background_pixmap') or not self.background_pixmap:
+                return
+                
+            # 밝기 값 가져오기 (0-100, 50이 원본)
+            brightness = getattr(self, 'custom_image_brightness', 50)
+            
+            # 원본 이미지 복사
+            adjusted_pixmap = self.background_pixmap.copy()
+            
+            if brightness != 50:  # 원본이 아닌 경우에만 조절
+                # 밝기 조절 팩터 계산 (0.3 ~ 1.7 범위)
+                # 0 = 0.3 (어둡게), 50 = 1.0 (원본), 100 = 1.7 (밝게)
+                if brightness <= 50:
+                    brightness_factor = 0.3 + (brightness / 50.0) * 0.7
+                else:
+                    brightness_factor = 1.0 + ((brightness - 50) / 50.0) * 0.7
+                
+                # QPainter를 사용하여 브라이트니스 효과 적용
+                painter = QPainter(adjusted_pixmap)
+                
+                # 브라이트니스 조절을 위한 컴포지션 모드 설정
+                if brightness < 50:
+                    # 어둡게: Multiply 모드 사용
+                    painter.setCompositionMode(QPainter.CompositionMode_Multiply)
+                    # 어두운 회색으로 곱하기 (밝기 감소)
+                    gray_value = int(255 * brightness_factor)
+                    painter.fillRect(adjusted_pixmap.rect(), QColor(gray_value, gray_value, gray_value))
+                else:
+                    # 밝게: Screen 모드 사용
+                    painter.setCompositionMode(QPainter.CompositionMode_Screen)
+                    # 밝은 회색으로 스크린 블렌딩 (밝기 증가)
+                    screen_value = int(255 * (brightness_factor - 1.0))
+                    painter.fillRect(adjusted_pixmap.rect(), QColor(screen_value, screen_value, screen_value))
+                
+                painter.end()
+            
+            # 조절된 이미지를 배경으로 설정
+            self.adjusted_background_pixmap = adjusted_pixmap
+            
+            # 윈도우 다시 그리기
+            self.update()
+            
+        except Exception as e:
+            print(f"[ERROR] 이미지 밝기 조절 실패: {e}")
 
     def reset_viewport_transparency(self):
         """뷰포트 투명도만 초기화 (배경 이미지는 유지)"""
@@ -5335,8 +5390,6 @@ class PromptBook(QMainWindow):
                     splitter.setStyleSheet(splitter_style)
                     if hasattr(splitter, 'setHandleWidth'):
                         splitter.setHandleWidth(10)
-            
-
             
         except Exception as e:
             print(f"[ERROR] 투명도 적용 실패: {e}")
@@ -5792,7 +5845,7 @@ class PromptBook(QMainWindow):
     def mouseReleaseEvent(self, event):
         """마우스 릴리즈 이벤트 - 드래그 종료"""
         self.drag_position = None
-    
+        
     def leaveEvent(self, event):
         """마우스가 윈도우를 벗어날 때"""
         super().leaveEvent(event)
@@ -5832,9 +5885,36 @@ class PromptBook(QMainWindow):
         if event.type() == QEvent.WindowStateChange:
             # 핸들 상태 업데이트
             self.update_resize_handles()
+
+    def toggle_always_on_top(self):
+        """창 맨 위에 고정 토글"""
+        self.always_on_top = not self.always_on_top
     
+        # 현재 창 플래그 가져오기
+        current_flags = self.windowFlags()
+    
+        if self.always_on_top:
+            # 맨 위에 고정 플래그 추가
+            new_flags = current_flags | Qt.WindowStaysOnTopHint
+        else:
+            # 맨 위에 고정 플래그 제거
+            new_flags = current_flags & ~Qt.WindowStaysOnTopHint
+    
+        # 창 플래그 업데이트
+        self.setWindowFlags(new_flags)
+    
+        # 창을 다시 표시 (플래그 변경 후 필요)
+        self.show()
+    
+        # 설정 저장
+        self.save_ui_settings()
+    
+        # 상태 메시지 표시
+        status_text = "활성화" if self.always_on_top else "비활성화"
+        print(f"[DEBUG] 창 맨 위에 고정: {status_text}")
+
     def apply_rounded_corners(self):
-        """윈도우에 둥근 모서리 마스크 적용 (안티앨리어싱)"""
+        """윈도우에 둥근 모서리 마스크 적용 (정확한 크기 매칭)"""
         # 윈도우 크기 가져오기
         rect = self.rect()
         
@@ -5842,30 +5922,23 @@ class PromptBook(QMainWindow):
         if rect.width() < 20 or rect.height() < 20:
             return
         
-        # 고해상도 픽스맵 생성 (안티앨리어싱을 위해 2배 크기)
-        scale_factor = 2
-        high_res_size = QSize(rect.width() * scale_factor, rect.height() * scale_factor)
-        pixmap = QPixmap(high_res_size)
+        # 정확한 윈도우 크기로 픽스맵 생성
+        pixmap = QPixmap(rect.size())
         pixmap.fill(Qt.transparent)  # 투명으로 초기화
         
         # 고품질 페인터로 둥근 사각형 그리기
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         painter.setBrush(QBrush(Qt.black))  # 불투명 영역
         painter.setPen(Qt.NoPen)
         
-        # 스케일된 둥근 사각형 그리기
-        scaled_rect = QRectF(0, 0, rect.width() * scale_factor, rect.height() * scale_factor)
-        scaled_radius = self.border_radius * scale_factor
-        painter.drawRoundedRect(scaled_rect, scaled_radius, scaled_radius)
+        # 정확한 크기의 둥근 사각형 그리기 (1픽셀 여백 제거)
+        draw_rect = QRectF(0, 0, rect.width(), rect.height())
+        painter.drawRoundedRect(draw_rect, self.border_radius, self.border_radius)
         painter.end()
         
-        # 원본 크기로 스케일 다운
-        final_pixmap = pixmap.scaled(rect.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        
         # 픽스맵을 마스크로 변환
-        mask = final_pixmap.createMaskFromColor(Qt.transparent, Qt.MaskInColor)
+        mask = pixmap.createMaskFromColor(Qt.transparent, Qt.MaskInColor)
         
         # 윈도우 마스크 설정
         self.setMask(mask)
@@ -5886,7 +5959,7 @@ class PromptBook(QMainWindow):
         save_book_action = QAction("💾 선택된 북 저장하기", self)
         save_book_action.triggered.connect(self.save_selected_book)
         file_menu.addAction(save_book_action)
-        
+
         # 저장된 북 불러오기
         load_book_action = QAction("📂 저장된 북 불러오기", self)
         load_book_action.triggered.connect(self.load_saved_book)
@@ -5902,12 +5975,19 @@ class PromptBook(QMainWindow):
             # 현재 테마 체크 상태 업데이트 (current_theme이 초기화된 경우에만)
             if hasattr(self, 'current_theme') and action.text() == self.current_theme:
                 action.setChecked(True)
-            else:
+        else:
                 action.setChecked(False)
         
         # 옵션 메뉴
         options_menu = menu.addMenu("⚙️ 옵션")
         options_menu.setStyleSheet(menu_style)
+        
+        # 창 맨 위에 고정
+        always_on_top_action = QAction("📌 창 맨 위에 고정", self)
+        always_on_top_action.setCheckable(True)
+        always_on_top_action.setChecked(getattr(self, 'always_on_top', False))
+        always_on_top_action.triggered.connect(self.toggle_always_on_top)
+        options_menu.addAction(always_on_top_action)
         
         # 윈도우 투명도 조절
         window_opacity_action = QAction("🌫️ 윈도우 투명도 조절", self)
@@ -7237,76 +7317,77 @@ class PromptBook(QMainWindow):
     #             f"AI 테스터를 실행하는 중 오류가 발생했습니다:\n{str(e)}"
     #         )
 
-def setup_logging():
-    """로깅 설정 - 오류 발생 시 로그 파일에 기록"""
-    log_filename = f"promptbook_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+class LogDialog(QDialog):
+    """로그 표시용 팝업 대화상자"""
     
-    logging.basicConfig(
-        level=logging.ERROR,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_filename, encoding='utf-8'),
-            logging.StreamHandler()  # 콘솔에도 출력
-        ]
-    )
-    
-    return log_filename
+    def __init__(self, title, message, details=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setFixedSize(500, 400)
+        
+        # 레이아웃
+        layout = QVBoxLayout(self)
+        
+        # 메인 메시지
+        message_label = QLabel(message)
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet("font-weight: bold; font-size: 12px; margin-bottom: 10px;")
+        layout.addWidget(message_label)
+        
+        # 상세 정보 (있는 경우)
+        if details:
+            details_text = QTextEdit()
+            details_text.setPlainText(details)
+            details_text.setReadOnly(True)
+            details_text.setStyleSheet("font-family: 'Consolas', 'Monaco', monospace; font-size: 10px;")
+            layout.addWidget(details_text)
+        
+        # 버튼
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        close_button = QPushButton("닫기")
+        close_button.clicked.connect(self.accept)
+        close_button.setMinimumWidth(80)
+        button_layout.addWidget(close_button)
+        
+        layout.addLayout(button_layout)
 
-def handle_exception(exc_type, exc_value, exc_traceback):
-    """전역 예외 처리기 - 모든 예외를 로그 파일에 기록"""
-    if issubclass(exc_type, KeyboardInterrupt):
-        # Ctrl+C 인터럽트는 정상 종료로 처리
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-    
-    # 예외 정보를 로그에 기록
-    error_msg = f"프로그램 오류 발생:\n"
-    error_msg += f"오류 타입: {exc_type.__name__}\n"
-    error_msg += f"오류 메시지: {str(exc_value)}\n"
-    error_msg += f"발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-    error_msg += f"상세 스택 트레이스:\n"
-    error_msg += ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-    
-    logging.error(error_msg)
-    
-    # 사용자에게 오류 알림 (GUI가 가능한 경우)
+def show_error_popup(title, message, details=None):
+    """오류 팝업창 표시"""
     try:
-        from PySide6.QtWidgets import QMessageBox, QApplication
         app = QApplication.instance()
         if app is not None:
-            msg_box = QMessageBox()
-            msg_box.setIcon(QMessageBox.Critical)
-            msg_box.setWindowTitle("프롬프트북 오류")
-            msg_box.setText("프로그램에서 예상치 못한 오류가 발생했습니다.")
-            msg_box.setDetailedText(f"오류 내용: {str(exc_value)}\n\n자세한 로그는 다음 파일에서 확인할 수 있습니다:\n{log_filename}")
-            msg_box.setStandardButtons(QMessageBox.Ok)
-            msg_box.exec()
-    except:
-        # GUI 표시 실패 시 콘솔에만 출력
-        print(f"오류가 발생했습니다. 로그 파일을 확인해주세요: {log_filename}")
+            dialog = LogDialog(title, message, details)
+            dialog.exec()
+        else:
+            # GUI가 없는 경우 콘솔에 출력
+            print(f"{title}: {message}")
+            if details:
+                print(f"상세 정보:\n{details}")
+    except Exception as e:
+        # 팝업 표시 실패 시 콘솔에 출력
+        print(f"{title}: {message}")
+        if details:
+            print(f"상세 정보:\n{details}")
+        print(f"팝업 표시 실패: {e}")
 
 if __name__ == "__main__":
-    # 로깅 설정
-    log_filename = setup_logging()
-    
-    # 전역 예외 처리기 설정
-    sys.excepthook = handle_exception
-    
     try:
         app = QApplication(sys.argv)
         window = PromptBook()
         window.show()
-        
-        # 프로그램 시작 로그
-        logging.info("프롬프트북이 성공적으로 시작되었습니다.")
-        
         sys.exit(app.exec())
         
     except Exception as e:
-        # 메인 실행 중 오류 발생 시
-        error_msg = f"프롬프트북 시작 중 오류 발생: {str(e)}\n{traceback.format_exc()}"
-        logging.error(error_msg)
-        print(f"프로그램 시작 실패. 로그 파일을 확인해주세요: {log_filename}")
+        # 메인 실행 중 오류 발생 시 팝업으로 표시
+        import traceback
+        error_details = traceback.format_exc()
+        show_error_popup(
+            "프롬프트북 시작 오류",
+            f"프로그램 시작 중 오류가 발생했습니다:\n{str(e)}",
+            error_details
+        )
         sys.exit(1)
     
 
