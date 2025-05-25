@@ -714,7 +714,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.1.5"
+    VERSION = "v2.1.6"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -892,10 +892,16 @@ class PromptBook(QMainWindow):
         self.book_sort_selector = None
         
         # 기본 윈도우 설정
-        self.setWindowTitle("프롬프트 북")
+        self.setWindowTitle(f"프롬프트 북 {self.VERSION}")
         self.setMinimumSize(1000, 600)  # 최소 크기 설정
         self.resize(1000, 600)  # 기본 크기 설정
         self.setAcceptDrops(True)
+        
+        # 앱 아이콘 설정
+        if os.path.exists("icon.png"):
+            self.setWindowIcon(QIcon("icon.png"))
+        else:
+            print("[DEBUG] icon.png 파일을 찾을 수 없습니다.")
         
         # 프레임리스 윈도우로 설정 (커스텀 타이틀 바를 위해)
         self.setWindowFlags(Qt.FramelessWindowHint)
@@ -1328,8 +1334,51 @@ class PromptBook(QMainWindow):
 
     def filter_characters(self):
         query = self.search_input.text().strip().lower()
+        
+        # 검색어가 비어있으면 전체 리스트 갱신 (선택 없이)
+        if not query:
+            self.refresh_character_list(selected_name=None)  # 명시적으로 None 전달
+            # 선택 상태 완전히 초기화
+            self.current_index = -1
+            self.char_list.clearSelection()
+            if hasattr(self, 'name_input'):
+                self.name_input.clear()
+            if hasattr(self, 'tag_input'):
+                self.tag_input.clear()
+            if hasattr(self, 'desc_input'):
+                self.desc_input.clear()
+            if hasattr(self, 'prompt_input'):
+                self.prompt_input.clear()
+            if hasattr(self, 'lock_checkbox'):
+                self.lock_checkbox.setChecked(False)
+                self.lock_checkbox.setText("🔓 페이지 잠금")
+                self.lock_checkbox.setEnabled(False)
+            self.image_scene.clear()
+            self.image_view.update_drop_hint_visibility()
+            self.update_all_buttons_state()
+            self.update_image_buttons_state()
+            return
+            
         self.char_list.blockSignals(True)
         self.char_list.clear()
+        
+        # 검색 시 현재 선택 상태 초기화
+        self.current_index = -1
+        if hasattr(self, 'name_input'):
+            self.name_input.clear()
+        if hasattr(self, 'tag_input'):
+            self.tag_input.clear()
+        if hasattr(self, 'desc_input'):
+            self.desc_input.clear()
+        if hasattr(self, 'prompt_input'):
+            self.prompt_input.clear()
+        if hasattr(self, 'lock_checkbox'):
+            self.lock_checkbox.setChecked(False)
+            self.lock_checkbox.setText("🔓 페이지 잠금")
+            self.lock_checkbox.setEnabled(False)
+        self.image_scene.clear()
+        self.image_view.update_drop_hint_visibility()
+        
         for i, char in enumerate(self.state.characters):
             name = char.get("name", "").lower()
             tags = char.get("tags", "").lower()
@@ -1347,11 +1396,45 @@ class PromptBook(QMainWindow):
                 self.char_list.addItem(item)
                 self.char_list.setItemWidget(item, widget)
                 item.setSizeHint(widget.sizeHint())
+                
         self.char_list.blockSignals(False)
+        
+        # 버튼 상태 업데이트
+        self.update_all_buttons_state()
+        self.update_image_buttons_state()
 
     def filter_books(self):
         """북 검색 필터링"""
+        query = self.book_search_input.text().strip().lower() if hasattr(self, "book_search_input") else ""
+        
+        # 검색 시 현재 북과 페이지 상태 초기화
+        self.current_book = None
+        self.state.characters = []
+        self.char_list.clear()
+        self.current_index = -1
+        
+        # 입력 필드 비우기
+        if hasattr(self, 'name_input'):
+            self.name_input.clear()
+        if hasattr(self, 'tag_input'):
+            self.tag_input.clear()
+        if hasattr(self, 'desc_input'):
+            self.desc_input.clear()
+        if hasattr(self, 'prompt_input'):
+            self.prompt_input.clear()
+        if hasattr(self, 'lock_checkbox'):
+            self.lock_checkbox.setChecked(False)
+            self.lock_checkbox.setText("🔓 페이지 잠금")
+            self.lock_checkbox.setEnabled(False)
+        self.image_scene.clear()
+        self.image_view.update_drop_hint_visibility()
+        
+        # 북 리스트 갱신
         self.refresh_book_list()
+        
+        # 버튼 상태 업데이트
+        self.update_all_buttons_state()
+        self.update_image_buttons_state()
 
     def refresh_book_list(self, selected_name=None):
         """북 리스트 갱신"""
@@ -1378,12 +1461,40 @@ class PromptBook(QMainWindow):
                     item.setSizeHint(widget.sizeHint())
         
         # 선택 상태 복원
+        book_found = False
         if selected_name:
             for i in range(self.book_list.count()):
                 item = self.book_list.item(i)
                 if item.data(Qt.UserRole) == selected_name:
                     self.book_list.setCurrentItem(item)
+                    book_found = True
                     break
+        
+        # 선택된 북이 검색 결과에 없으면 선택 해제
+        if not book_found:
+            self.book_list.clearSelection()
+            # 검색으로 인해 현재 북이 보이지 않으면 페이지 리스트도 비우기
+            if self.current_book and selected_name and self.current_book == selected_name:
+                self.current_book = None
+                self.state.characters = []
+                self.char_list.clear()
+                self.current_index = -1
+                
+                # 입력 필드 비우기
+                if hasattr(self, 'name_input'):
+                    self.name_input.clear()
+                if hasattr(self, 'tag_input'):
+                    self.tag_input.clear()
+                if hasattr(self, 'desc_input'):
+                    self.desc_input.clear()
+                if hasattr(self, 'prompt_input'):
+                    self.prompt_input.clear()
+                if hasattr(self, 'lock_checkbox'):
+                    self.lock_checkbox.setChecked(False)
+                    self.lock_checkbox.setText("🔓 페이지 잠금")
+                    self.lock_checkbox.setEnabled(False)
+                self.image_scene.clear()
+                self.image_view.update_drop_hint_visibility()
         
         self.book_list.blockSignals(False)
 
@@ -1655,10 +1766,11 @@ class PromptBook(QMainWindow):
             print(f"[DEBUG] 선택 상태 복원: 인덱스 {selected_index}")
             self.char_list.setCurrentRow(selected_index)
             self.current_index = selected_index
-        elif self.char_list.count() > 0:
-            print("[DEBUG] 첫 번째 항목 선택")
-            self.char_list.setCurrentRow(0)
-            self.current_index = 0
+        else:
+            # selected_name이 None이거나 찾을 수 없으면 아무것도 선택하지 않음
+            print("[DEBUG] 아무 항목도 선택하지 않음")
+            self.char_list.clearSelection()
+            self.current_index = -1
 
         self.update_all_buttons_state()
         
