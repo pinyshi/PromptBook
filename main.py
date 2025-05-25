@@ -6,6 +6,9 @@ from promptbook_utils import PromptBookUtils
 from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
 import os, json, csv, shutil, sys
+import logging
+import traceback
+from datetime import datetime
 
 # AI 테스터 모듈 import (개발 중)
 # try:
@@ -7137,11 +7140,77 @@ class PromptBook(QMainWindow):
     #             f"AI 테스터를 실행하는 중 오류가 발생했습니다:\n{str(e)}"
     #         )
 
+def setup_logging():
+    """로깅 설정 - 오류 발생 시 로그 파일에 기록"""
+    log_filename = f"promptbook_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    
+    logging.basicConfig(
+        level=logging.ERROR,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_filename, encoding='utf-8'),
+            logging.StreamHandler()  # 콘솔에도 출력
+        ]
+    )
+    
+    return log_filename
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    """전역 예외 처리기 - 모든 예외를 로그 파일에 기록"""
+    if issubclass(exc_type, KeyboardInterrupt):
+        # Ctrl+C 인터럽트는 정상 종료로 처리
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    
+    # 예외 정보를 로그에 기록
+    error_msg = f"프로그램 오류 발생:\n"
+    error_msg += f"오류 타입: {exc_type.__name__}\n"
+    error_msg += f"오류 메시지: {str(exc_value)}\n"
+    error_msg += f"발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+    error_msg += f"상세 스택 트레이스:\n"
+    error_msg += ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    
+    logging.error(error_msg)
+    
+    # 사용자에게 오류 알림 (GUI가 가능한 경우)
+    try:
+        from PySide6.QtWidgets import QMessageBox, QApplication
+        app = QApplication.instance()
+        if app is not None:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Critical)
+            msg_box.setWindowTitle("프롬프트북 오류")
+            msg_box.setText("프로그램에서 예상치 못한 오류가 발생했습니다.")
+            msg_box.setDetailedText(f"오류 내용: {str(exc_value)}\n\n자세한 로그는 다음 파일에서 확인할 수 있습니다:\n{log_filename}")
+            msg_box.setStandardButtons(QMessageBox.Ok)
+            msg_box.exec()
+    except:
+        # GUI 표시 실패 시 콘솔에만 출력
+        print(f"오류가 발생했습니다. 로그 파일을 확인해주세요: {log_filename}")
+
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = PromptBook()
-    window.show()
-    sys.exit(app.exec())
+    # 로깅 설정
+    log_filename = setup_logging()
+    
+    # 전역 예외 처리기 설정
+    sys.excepthook = handle_exception
+    
+    try:
+        app = QApplication(sys.argv)
+        window = PromptBook()
+        window.show()
+        
+        # 프로그램 시작 로그
+        logging.info("프롬프트북이 성공적으로 시작되었습니다.")
+        
+        sys.exit(app.exec())
+        
+    except Exception as e:
+        # 메인 실행 중 오류 발생 시
+        error_msg = f"프롬프트북 시작 중 오류 발생: {str(e)}\n{traceback.format_exc()}"
+        logging.error(error_msg)
+        print(f"프로그램 시작 실패. 로그 파일을 확인해주세요: {log_filename}")
+        sys.exit(1)
     
 
     
