@@ -206,9 +206,12 @@ class PromptInput(QMainWindow):
         # 아이콘 설정 (PyInstaller 리소스 포함)
         try:
             if getattr(sys, 'frozen', False):
-                # PyInstaller로 빌드된 exe에서는 내장된 아이콘 사용
-                # PyInstaller가 자동으로 설정한 아이콘을 그대로 사용
-                pass
+                # PyInstaller로 빌드된 exe에서는 임시 폴더의 아이콘 사용
+                icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+                if os.path.exists(icon_path):
+                    self.setWindowIcon(QIcon(icon_path))
+                else:
+                    print("[DEBUG] 내장된 아이콘 파일을 찾을 수 없습니다.")
             else:
                 # 개발 환경에서는 로컬 아이콘 파일 사용
                 if os.path.exists("icon.ico"):
