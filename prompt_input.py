@@ -1,8 +1,5 @@
 import sys
 import os
-import logging
-import traceback
-from datetime import datetime
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
@@ -186,8 +183,11 @@ class PromptInput(QMainWindow):
     
     def __init__(self):
         super().__init__()
+        # 창 고정 상태 변수
+        self.always_on_top = False
         self.setup_ui()
         self.setup_autocomplete()
+        self.setup_shortcuts()
         
     def setup_ui(self):
         """UI 설정"""
@@ -215,11 +215,26 @@ class PromptInput(QMainWindow):
         self.prompt_input.setMinimumHeight(200)
         layout.addWidget(self.prompt_input)
         
+        # 버튼 레이아웃
+        button_layout = QHBoxLayout()
+        
         # 복사 버튼
         self.copy_button = QPushButton("📋 복사")
         self.copy_button.clicked.connect(self.copy_prompt_to_clipboard)
         self.copy_button.setMinimumHeight(35)
-        layout.addWidget(self.copy_button)
+        self.copy_button.setToolTip("프롬프트를 클립보드에 복사합니다 (Ctrl+Shift+C)")
+        button_layout.addWidget(self.copy_button)
+        
+        # 창 고정 버튼
+        self.pin_button = QPushButton("📌 맨 위에 고정")
+        self.pin_button.setCheckable(True)
+        self.pin_button.setChecked(self.always_on_top)
+        self.pin_button.clicked.connect(self.toggle_always_on_top)
+        self.pin_button.setMinimumHeight(35)
+        self.pin_button.setToolTip("창을 다른 모든 창 위에 고정합니다 (Ctrl+T)")
+        button_layout.addWidget(self.pin_button)
+        
+        layout.addLayout(button_layout)
         
         # 상태바
         self.statusBar().showMessage("프롬프트를 입력하고 복사 버튼을 클릭하세요.")
@@ -244,64 +259,102 @@ class PromptInput(QMainWindow):
         """프롬프트를 클립보드에 복사 (프롬프트북과 동일)"""
         QApplication.clipboard().setText(self.prompt_input.toPlainText())
         QToolTip.showText(self.copy_button.mapToGlobal(self.copy_button.rect().center()), "프롬프트가 복사되었습니다.")
+    
+    def setup_shortcuts(self):
+        """단축키 설정"""
+        # 창 고정 단축키 (Ctrl+T)
+        pin_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
+        pin_shortcut.activated.connect(self.toggle_always_on_top)
+        
+        # 복사 단축키 (Ctrl+C는 기본 복사와 겹치므로 Ctrl+Shift+C 사용)
+        copy_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
+        copy_shortcut.activated.connect(self.copy_prompt_to_clipboard)
+    
+    def toggle_always_on_top(self):
+        """창 맨 위에 고정 토글"""
+        self.always_on_top = not self.always_on_top
+        
+        # 버튼 상태 업데이트
+        self.pin_button.setChecked(self.always_on_top)
+        
+        if self.always_on_top:
+            # 맨 위에 고정 플래그 추가 (기본 플래그 유지)
+            new_flags = Qt.Window | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowStaysOnTopHint
+            self.pin_button.setText("📌 맨 위에 고정됨")
+        else:
+            # 맨 위에 고정 플래그 제거 (기본 플래그만 유지)
+            new_flags = Qt.Window | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint
+            self.pin_button.setText("📌 맨 위에 고정")
+        
+        # 창 플래그 업데이트
+        self.setWindowFlags(new_flags)
+        
+        # 창을 다시 표시 (플래그 변경 후 필요)
+        self.show()
+        
+        # 상태 메시지 표시
+        status_text = "활성화" if self.always_on_top else "비활성화"
+        self.statusBar().showMessage(f"창 맨 위에 고정: {status_text}")
+        print(f"[DEBUG] 프롬프트 입력기 - 창 맨 위에 고정: {status_text}")
 
 
-def setup_logging():
-    """로깅 설정 - 오류 발생 시 로그 파일에 기록"""
-    log_filename = f"promptinput_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+class LogDialog(QDialog):
+    """로그 표시용 팝업 대화상자"""
     
-    logging.basicConfig(
-        level=logging.ERROR,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_filename, encoding='utf-8'),
-            logging.StreamHandler()  # 콘솔에도 출력
-        ]
-    )
-    
-    return log_filename
+    def __init__(self, title, message, details=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setFixedSize(500, 400)
+        
+        # 레이아웃
+        layout = QVBoxLayout(self)
+        
+        # 메인 메시지
+        message_label = QLabel(message)
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet("font-weight: bold; font-size: 12px; margin-bottom: 10px;")
+        layout.addWidget(message_label)
+        
+        # 상세 정보 (있는 경우)
+        if details:
+            details_text = QTextEdit()
+            details_text.setPlainText(details)
+            details_text.setReadOnly(True)
+            details_text.setStyleSheet("font-family: 'Consolas', 'Monaco', monospace; font-size: 10px;")
+            layout.addWidget(details_text)
+        
+        # 버튼
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        close_button = QPushButton("닫기")
+        close_button.clicked.connect(self.accept)
+        close_button.setMinimumWidth(80)
+        button_layout.addWidget(close_button)
+        
+        layout.addLayout(button_layout)
 
-def handle_exception(exc_type, exc_value, exc_traceback):
-    """전역 예외 처리기 - 모든 예외를 로그 파일에 기록"""
-    if issubclass(exc_type, KeyboardInterrupt):
-        # Ctrl+C 인터럽트는 정상 종료로 처리
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-    
-    # 예외 정보를 로그에 기록
-    error_msg = f"프롬프트 입력기 오류 발생:\n"
-    error_msg += f"오류 타입: {exc_type.__name__}\n"
-    error_msg += f"오류 메시지: {str(exc_value)}\n"
-    error_msg += f"발생 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-    error_msg += f"상세 스택 트레이스:\n"
-    error_msg += ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-    
-    logging.error(error_msg)
-    
-    # 사용자에게 오류 알림 (GUI가 가능한 경우)
+def show_error_popup(title, message, details=None):
+    """오류 팝업창 표시"""
     try:
-        from PySide6.QtWidgets import QMessageBox, QApplication
         app = QApplication.instance()
         if app is not None:
-            msg_box = QMessageBox()
-            msg_box.setIcon(QMessageBox.Critical)
-            msg_box.setWindowTitle("프롬프트 입력기 오류")
-            msg_box.setText("프로그램에서 예상치 못한 오류가 발생했습니다.")
-            msg_box.setDetailedText(f"오류 내용: {str(exc_value)}\n\n자세한 로그는 다음 파일에서 확인할 수 있습니다:\n{log_filename}")
-            msg_box.setStandardButtons(QMessageBox.Ok)
-            msg_box.exec()
-    except:
-        # GUI 표시 실패 시 콘솔에만 출력
-        print(f"오류가 발생했습니다. 로그 파일을 확인해주세요: {log_filename}")
+            dialog = LogDialog(title, message, details)
+            dialog.exec()
+        else:
+            # GUI가 없는 경우 콘솔에 출력
+            print(f"{title}: {message}")
+            if details:
+                print(f"상세 정보:\n{details}")
+    except Exception as e:
+        # 팝업 표시 실패 시 콘솔에 출력
+        print(f"{title}: {message}")
+        if details:
+            print(f"상세 정보:\n{details}")
+        print(f"팝업 표시 실패: {e}")
 
 def main():
     """메인 함수"""
-    # 로깅 설정
-    log_filename = setup_logging()
-    
-    # 전역 예외 처리기 설정
-    sys.excepthook = handle_exception
-    
     try:
         app = QApplication(sys.argv)
         
@@ -314,17 +367,18 @@ def main():
         window = PromptInput()
         window.show()
         
-        # 프로그램 시작 로그
-        logging.info("프롬프트 입력기가 성공적으로 시작되었습니다.")
-        
         # 이벤트 루프 시작
         sys.exit(app.exec())
         
     except Exception as e:
-        # 메인 실행 중 오류 발생 시
-        error_msg = f"프롬프트 입력기 시작 중 오류 발생: {str(e)}\n{traceback.format_exc()}"
-        logging.error(error_msg)
-        print(f"프로그램 시작 실패. 로그 파일을 확인해주세요: {log_filename}")
+        # 메인 실행 중 오류 발생 시 팝업으로 표시
+        import traceback
+        error_details = traceback.format_exc()
+        show_error_popup(
+            "프롬프트 입력기 시작 오류",
+            f"프로그램 시작 중 오류가 발생했습니다:\n{str(e)}",
+            error_details
+        )
         sys.exit(1)
 
 
