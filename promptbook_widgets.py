@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QPlainTextEdit, QGraphicsView, QCompleter, QApplication, QWidget, QHBoxLayout, QLabel
-from PySide6.QtGui import QKeyEvent, QPainter, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QKeyEvent, QPainter, QDragEnterEvent, QDropEvent, QTextOption
 from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtCore import Signal
 
@@ -8,6 +8,11 @@ class CustomLineEdit(QPlainTextEdit):
         super().__init__()
         self._completer = None
         self.prompt_display_map = {}
+        
+        # 자동줄바꿈 설정 - 텍스트 위주로 변경
+        self.setLineWrapMode(QPlainTextEdit.WidgetWidth)  # 위젯 너비에 맞춰 줄바꿈
+        self.setWordWrapMode(QTextOption.WrapAnywhere)  # 어디서든 줄바꿈 (텍스트 위주)
+        
         self.set_custom_completer(completer)
         self.textChanged.connect(lambda: self.update_completion(self.toPlainText()))
 

@@ -15,7 +15,7 @@ class CustomTextEdit(QTextEdit):
         # 텍스트 에디트 설정
         self.setAcceptRichText(False)  # 서식 있는 텍스트 비활성화
         self.setLineWrapMode(QTextEdit.WidgetWidth)  # 자동 줄바꿈 활성화
-        self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)  # 단어 경계에서 줄바꿈
+        self.setWordWrapMode(QTextOption.WrapAnywhere)  # 어디서든 줄바꿈 (텍스트 위주)
         
     def set_custom_completer(self, completer):
         """자동 완성기를 설정합니다."""
