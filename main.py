@@ -5,7 +5,7 @@ from promptbook_widgets import CustomLineEdit, ImageView
 from promptbook_utils import PromptBookUtils
 from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
-import os, json, csv, shutil, sys
+import os, json, csv, shutil, sys, re
 
 def get_app_directory():
     """실행 파일의 디렉토리를 반환합니다."""
@@ -2522,14 +2522,14 @@ class PromptBook(QMainWindow):
                 existing_names.add(item.data(Qt.UserRole))
         
         # 고유한 이름 생성
-        if base_name not in existing_names:
-            unique_name = base_name
+        for i in range(1, 1000):
+            candidate = f"{base_name} ({i})"
+            if candidate not in existing_names:
+                unique_name = candidate
+                break
         else:
-            for i in range(1, 1000):
-                candidate = f"{base_name} ({i})"
-                if candidate not in existing_names:
-                    unique_name = candidate
-                    break
+            # 만약 (1)부터 (999)까지 모두 사용 중이면 기본 이름 사용
+            unique_name = base_name
 
         print(f"[DEBUG] 새 북 이름: {unique_name}")  # 디버그 추가
         
@@ -3786,13 +3786,15 @@ class PromptBook(QMainWindow):
         base_name = original_data["name"]
         existing_names = {char["name"] for char in self.state.characters}
         
+        # 기존 넘버링 제거하고 베이스 이름 추출 (예: "캐릭터 (1)" -> "캐릭터")
+        original_base_name = re.sub(r' \(\d+\)$', '', base_name)
+        
         # 새 이름 생성 (예: "캐릭터" -> "캐릭터 (1)")
-        if base_name in existing_names:
-            for i in range(1, 1000):
-                candidate = f"{base_name} ({i})"
-                if candidate not in existing_names:
-                    base_name = candidate
-                    break
+        for i in range(1, 1000):
+            candidate = f"{original_base_name} ({i})"
+            if candidate not in existing_names:
+                base_name = candidate
+                break
                     
         # 새 데이터 생성
         new_data = original_data.copy()
@@ -3802,8 +3804,18 @@ class PromptBook(QMainWindow):
         if "image_path" in original_data and os.path.exists(original_data["image_path"]):
             original_path = original_data["image_path"]
             file_name, ext = os.path.splitext(os.path.basename(original_path))
-            new_file_name = f"{file_name}_001{ext}"  # 복제본은 _001 접미사 추가
-            new_path = os.path.join(os.path.dirname(original_path), new_file_name)
+            
+            # 기존 넘버링 제거 (예: _0001, _0002 등)
+            base_file_name = re.sub(r'_\d{4}$', '', file_name)
+            
+            # 새로운 파일명 생성 (_0001, _0002, _0003 형식)
+            counter = 1
+            while True:
+                new_file_name = f"{base_file_name}_{counter:04d}{ext}"
+                new_path = os.path.join(os.path.dirname(original_path), new_file_name)
+                if not os.path.exists(new_path):
+                    break
+                counter += 1
             
             try:
                 shutil.copy2(original_path, new_path)
@@ -3873,9 +3885,12 @@ class PromptBook(QMainWindow):
             # 이름 중복 방지
             base_name = original_data["name"]
             
+            # 기존 넘버링 제거하고 베이스 이름 추출 (예: "캐릭터 (1)" -> "캐릭터")
+            original_base_name = re.sub(r' \(\d+\)$', '', base_name)
+            
             # 새 이름 생성
             for i in range(1, 1000):
-                candidate = f"{base_name} ({i})"
+                candidate = f"{original_base_name} ({i})"
                 if candidate not in existing_names:
                     base_name = candidate
                     existing_names.add(candidate)  # 중복 방지용 세트에 추가
@@ -3889,14 +3904,17 @@ class PromptBook(QMainWindow):
             if "image_path" in original_data and os.path.exists(original_data["image_path"]):
                 original_path = original_data["image_path"]
                 file_name, ext = os.path.splitext(os.path.basename(original_path))
-                new_file_name = f"{file_name}_copy{ext}"
-                new_path = os.path.join(os.path.dirname(original_path), new_file_name)
                 
-                # 파일명 중복 방지
+                # 기존 넘버링 제거 (예: _0001, _0002 등)
+                base_file_name = re.sub(r'_\d{4}$', '', file_name)
+                
+                # 새로운 파일명 생성 (_0001, _0002, _0003 형식)
                 counter = 1
-                while os.path.exists(new_path):
-                    new_file_name = f"{file_name}_copy{counter}{ext}"
+                while True:
+                    new_file_name = f"{base_file_name}_{counter:04d}{ext}"
                     new_path = os.path.join(os.path.dirname(original_path), new_file_name)
+                    if not os.path.exists(new_path):
+                        break
                     counter += 1
                 
                 try:
