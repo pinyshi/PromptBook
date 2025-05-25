@@ -954,8 +954,16 @@ class ResizeHandle(QWidget):
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
     VERSION = "v2.2.6"
-    SAVE_FILE = "character_data.json"
-    SETTINGS_FILE = "ui_settings.json"
+    
+    @property
+    def SAVE_FILE(self):
+        """데이터 파일 경로를 실행 파일 위치 기준으로 반환"""
+        return os.path.join(get_app_directory(), "character_data.json")
+    
+    @property
+    def SETTINGS_FILE(self):
+        """설정 파일 경로를 실행 파일 위치 기준으로 반환"""
+        return os.path.join(get_app_directory(), "ui_settings.json")
     
     # 테마 정의
     THEMES = {
@@ -1369,7 +1377,8 @@ class PromptBook(QMainWindow):
         self.prompt_input = CustomLineEdit()
         self.prompt_input.setAcceptDrops(False)  # 드래그 앤 드롭 비활성화
         try:
-            with open("autocomplete.txt", 'r', encoding='utf-8') as f:
+            autocomplete_path = os.path.join(get_app_directory(), "autocomplete.txt")
+            with open(autocomplete_path, 'r', encoding='utf-8') as f:
                 prompts = [line.strip() for line in f if line.strip()]
             completer = QCompleter(prompts)
             self.prompt_input.set_custom_completer(completer)

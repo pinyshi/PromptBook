@@ -4,6 +4,15 @@ from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 
+def get_app_directory():
+    """실행 파일의 디렉토리를 반환합니다."""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller로 빌드된 exe 파일인 경우
+        return os.path.dirname(sys.executable)
+    else:
+        # 개발 환경에서 실행하는 경우
+        return os.path.dirname(os.path.abspath(__file__))
+
 class CustomTextEdit(QTextEdit):
     """메모장 스타일의 자동완성 텍스트 에디트 (프롬프트북 로직 적용)"""
     
@@ -242,7 +251,8 @@ class PromptInput(QMainWindow):
     def setup_autocomplete(self):
         """자동완성 설정 (프롬프트북과 완전히 동일)"""
         try:
-            with open("autocomplete.txt", 'r', encoding='utf-8') as f:
+            autocomplete_path = os.path.join(get_app_directory(), "autocomplete.txt")
+            with open(autocomplete_path, 'r', encoding='utf-8') as f:
                 prompts = [line.strip() for line in f if line.strip()]
             completer = QCompleter(prompts)
             self.prompt_input.set_custom_completer(completer)
