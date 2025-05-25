@@ -714,7 +714,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.1.3"
+    VERSION = "v2.1.4"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -4276,6 +4276,14 @@ class PromptBook(QMainWindow):
             else:
                 action.setChecked(False)
         
+        # 도움말 메뉴
+        menu.addSeparator()
+        
+        # 단축키 안내
+        shortcuts_action = QAction("⌨️ 단축키 안내", self)
+        shortcuts_action.triggered.connect(self.show_shortcuts_help)
+        menu.addAction(shortcuts_action)
+        
         # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
         button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
         menu.exec_(button_pos)
@@ -4437,6 +4445,164 @@ class PromptBook(QMainWindow):
         thanks_label.setAlignment(Qt.AlignCenter)
         thanks_label.setStyleSheet("font-weight: bold; font-size: 12px; color: #ff6b9d;")
         layout.addWidget(thanks_label)
+        
+        # 닫기 버튼
+        close_button = QPushButton("닫기")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        
+        # 다이얼로그 표시
+        dialog.exec()
+    
+    def show_shortcuts_help(self):
+        """단축키 안내 다이얼로그 표시"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("⌨️ 단축키 안내")
+        dialog.setModal(True)
+        dialog.setFixedSize(600, 500)
+        
+        # 윈도우 플래그 설정
+        dialog.setWindowFlags(Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint)
+        
+        # 현재 테마 적용
+        current_theme = getattr(self, 'current_theme', '어두운 모드')
+        theme = self.THEMES.get(current_theme, self.THEMES['어두운 모드'])
+        
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {theme['background']};
+                color: {theme['text']};
+                border: 2px solid {theme['border']};
+                border-radius: 10px;
+            }}
+            QLabel {{
+                color: {theme['text']};
+                background-color: transparent;
+            }}
+            QPushButton {{
+                background-color: {theme['button']};
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 8px 16px;
+                border-radius: 5px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {theme['button_hover']};
+            }}
+            QScrollArea {{
+                background-color: {theme['surface']};
+                border: 1px solid {theme['border']};
+                border-radius: 5px;
+            }}
+            QWidget#scrollContent {{
+                background-color: {theme['surface']};
+            }}
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 제목
+        title_label = QLabel("⌨️ 프롬프트북 단축키 안내")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 10px;")
+        layout.addWidget(title_label)
+        
+        # 스크롤 영역
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_widget.setObjectName("scrollContent")
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # 단축키 데이터
+        shortcuts_data = [
+            {
+                "category": "📝 페이지 관리",
+                "shortcuts": [
+                    ("Ctrl + N", "새 페이지 추가"),
+                    ("Ctrl + S", "현재 페이지 저장"),
+                    ("Ctrl + D", "페이지 복제 (다중 선택 지원)"),
+                    ("Delete", "페이지/북 삭제 (다중 선택 지원)"),
+                    ("F2", "페이지/북 이름 변경"),
+                ]
+            },
+            {
+                "category": "🔢 다중 선택",
+                "shortcuts": [
+                    ("Ctrl + 클릭", "개별 항목을 하나씩 선택/해제"),
+                    ("Shift + 클릭", "첫 선택부터 클릭 위치까지 범위 선택"),
+                    ("Ctrl + A", "모든 항목 선택 (리스트 포커스 시)"),
+                    ("Esc", "선택 해제"),
+                ]
+            },
+            {
+                "category": "🖱️ 마우스 조작",
+                "shortcuts": [
+                    ("더블클릭", "페이지/북 이름 변경"),
+                    ("우클릭", "컨텍스트 메뉴 열기"),
+                    ("드래그", "정렬 순서 변경 (커스텀 모드)"),
+                    ("다중 드래그", "선택된 여러 항목 동시 이동"),
+                ]
+            },
+            {
+                "category": "📁 파일 관리",
+                "shortcuts": [
+                    ("이미지 드래그", "페이지에 이미지 추가"),
+                    ("Zip 불러오기", "저장된 북 불러오기"),
+                    ("Zip 저장", "현재 북 저장하기"),
+                ]
+            }
+        ]
+        
+        # 각 카테고리별로 단축키 표시
+        for category_data in shortcuts_data:
+            # 카테고리 제목
+            category_label = QLabel(category_data["category"])
+            category_label.setStyleSheet(f"""
+                font-size: 16px; 
+                font-weight: bold; 
+                color: {theme['primary']}; 
+                padding: 10px 0px 5px 0px;
+            """)
+            scroll_layout.addWidget(category_label)
+            
+            # 단축키 목록
+            for shortcut, description in category_data["shortcuts"]:
+                shortcut_layout = QHBoxLayout()
+                
+                # 단축키 라벨
+                shortcut_label = QLabel(shortcut)
+                shortcut_label.setStyleSheet(f"""
+                    background-color: {theme['button']};
+                    border: 1px solid {theme['border']};
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                    font-family: 'Consolas', 'Monaco', monospace;
+                    font-weight: bold;
+                    min-width: 120px;
+                """)
+                shortcut_label.setAlignment(Qt.AlignCenter)
+                shortcut_label.setFixedWidth(140)
+                
+                # 설명 라벨
+                desc_label = QLabel(description)
+                desc_label.setStyleSheet("padding: 4px 8px;")
+                
+                shortcut_layout.addWidget(shortcut_label)
+                shortcut_layout.addWidget(desc_label)
+                shortcut_layout.addStretch()
+                
+                scroll_layout.addLayout(shortcut_layout)
+            
+            # 카테고리 간 간격
+            scroll_layout.addSpacing(10)
+        
+        scroll_layout.addStretch()
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        layout.addWidget(scroll_area)
         
         # 닫기 버튼
         close_button = QPushButton("닫기")
