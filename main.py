@@ -263,7 +263,13 @@ class ClickableLabel(QLabel):
     
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.clicked.emit()
+            # Ctrl이나 Shift 키가 눌린 상태에서는 즐겨찾기 토글하지 않고 선택만 처리
+            modifiers = event.modifiers()
+            if not (modifiers & (Qt.ControlModifier | Qt.ShiftModifier)):
+                self.clicked.emit()
+                event.accept()  # 즐겨찾기 토글한 경우 이벤트 소비
+                return
+        # Ctrl/Shift가 눌린 상태거나 다른 버튼인 경우 부모로 전파
         super().mousePressEvent(event)
 
 class PageItemWidget(QWidget):
@@ -305,6 +311,20 @@ class PageItemWidget(QWidget):
         # 초기 상태 설정
         self.set_favorite(is_favorite)
         self.set_locked(is_locked)
+    
+    def mousePressEvent(self, event):
+        """마우스 이벤트 처리 - Ctrl/Shift 키가 눌린 상태에서는 즐겨찾기 토글 방지"""
+        if event.button() == Qt.LeftButton:
+            modifiers = event.modifiers()
+            
+            # Ctrl이나 Shift 키가 눌린 상태에서는 즐겨찾기 토글하지 않고 선택만 처리
+            if modifiers & (Qt.ControlModifier | Qt.ShiftModifier):
+                # 이벤트를 부모로 전파하여 다중 선택 처리
+                super().mousePressEvent(event)
+                return
+        
+        # 일반 클릭인 경우 기본 동작
+        super().mousePressEvent(event)
     
     def set_locked(self, is_locked):
         """잠금 상태 설정"""
@@ -694,7 +714,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.1.0"
+    VERSION = "v2.1.3"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -1652,6 +1672,35 @@ class PromptBook(QMainWindow):
 
     def on_book_selected(self, index):
         self.sort_mode_custom = False
+        
+        # 다중 선택 여부 확인
+        selected_books = self.book_list.selectedItems()
+        
+        if len(selected_books) > 1:
+            # 다중 선택된 경우 - 페이지 리스트 숨기기
+            self.current_book = None
+            self.state.characters = []
+            self.char_list.clear()
+            if hasattr(self, 'add_button'):
+                self.add_button.setEnabled(False)
+            
+            # 입력 필드 초기화
+            self.current_index = -1
+            if hasattr(self, 'name_input'):
+                self.name_input.clear()
+            if hasattr(self, 'tag_input'):
+                self.tag_input.clear()
+            if hasattr(self, 'desc_input'):
+                self.desc_input.clear()
+            if hasattr(self, 'prompt_input'):
+                self.prompt_input.clear()
+            self.image_scene.clear()
+            self.image_view.update_drop_hint_visibility()
+            
+            self.update_all_buttons_state()
+            return
+        
+        # 단일 선택인 경우 기존 로직
         if 0 <= index < self.book_list.count():
             item = self.book_list.item(index)
             book_name = item.data(Qt.UserRole) if item else None
@@ -1835,6 +1884,13 @@ class PromptBook(QMainWindow):
         print("[DEBUG] on_character_clicked 호출됨")
         index = self.char_list.row(item)
         print(f"[DEBUG] 클릭된 인덱스: {index}")
+        
+        # 다중 선택 상태인지 확인
+        selected_items = self.char_list.selectedItems()
+        if len(selected_items) > 1:
+            print(f"[DEBUG] 다중 선택 상태 ({len(selected_items)}개) - 단일 선택 처리 건너뜀")
+            return
+        
         self.on_character_selected(index)
     
     def on_book_selection_changed(self):
@@ -2728,7 +2784,7 @@ class PromptBook(QMainWindow):
         has_image = False
         if page_selected:
             image_path = self.state.characters[self.current_index].get("image_path", "")
-            has_image = image_path and os.path.exists(image_path)
+            has_image = bool(image_path and os.path.exists(image_path))
         
         self.image_remove_btn.setEnabled(has_image)
 
