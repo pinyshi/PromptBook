@@ -21,10 +21,11 @@ class ImageView(QGraphicsView):
         self.setRenderHints(
             QPainter.Antialiasing |            # 안티앨리어싱
             QPainter.SmoothPixmapTransform |   # 부드러운 이미지 변환
-            QPainter.TextAntialiasing          # 텍스트 안티앨리어싱
+            QPainter.TextAntialiasing |        # 텍스트 안티앨리어싱
+            QPainter.LosslessImageRendering    # 무손실 이미지 렌더링
         )
         
-        # 뷰포트 업데이트 모드 설정
+        # 뷰포트 업데이트 모드 설정 (고품질 렌더링을 위해)
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         
         # 스크롤바 숨기기
@@ -37,10 +38,9 @@ class ImageView(QGraphicsView):
         # 드래그 모드 설정
         self.setDragMode(QGraphicsView.NoDrag)
         
-        # 변환 최적화
+        # 변환 최적화 (고품질 렌더링 우선)
         self.setOptimizationFlags(
-            QGraphicsView.DontSavePainterState |
-            QGraphicsView.DontAdjustForAntialiasing
+            QGraphicsView.DontSavePainterState
         )
         
         # 캐시 모드 설정
@@ -831,7 +831,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.3"
+    VERSION = "v2.2.4"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -1324,14 +1324,8 @@ class PromptBook(QMainWindow):
         self.image_remove_btn.clicked.connect(self.remove_preview_image)
         self.image_remove_btn.setEnabled(False)
         
-        # 이미지 정리 버튼 추가
-        self.image_cleanup_btn = QPushButton("🧹 이미지 정리")
-        self.image_cleanup_btn.clicked.connect(self.cleanup_unused_images)
-        self.image_cleanup_btn.setToolTip("사용하지 않는 이미지를 휴지통으로 이동")
-        
         image_button_layout.addWidget(self.image_load_btn)
         image_button_layout.addWidget(self.image_remove_btn)
-        image_button_layout.addWidget(self.image_cleanup_btn)
         
         self.right_layout.addLayout(image_button_layout)
 
@@ -1392,42 +1386,39 @@ class PromptBook(QMainWindow):
         if not image_item:
             return
             
-        # 뷰포트와 씬 크기 가져오기
+        # 뷰포트 크기 가져오기
         viewport_rect = self.image_view.viewport().rect()
         viewport_width = viewport_rect.width()
         viewport_height = viewport_rect.height()
+        
+        # 최소 크기 확인 (너무 작으면 처리하지 않음)
+        if viewport_width < 10 or viewport_height < 10:
+            return
         
         # 이미지 크기 가져오기
         pixmap = image_item.pixmap()
         image_width = pixmap.width()
         image_height = pixmap.height()
         
-        # 이미지와 뷰포트의 비율 계산
+        # 이미지와 뷰포트의 비율 계산 (비율 유지하면서 최대한 크게)
         scale_width = viewport_width / image_width
         scale_height = viewport_height / image_height
         scale = min(scale_width, scale_height)
         
-        # 변환 매트릭스 초기화 및 스케일 설정
+        # 최소 스케일 제한 (너무 작아지지 않도록)
+        scale = max(scale, 0.1)
+        
+        # 변환 매트릭스 초기화
         self.image_view.resetTransform()
-        self.image_view.scale(scale, scale)
         
-        # 이미지 중앙 위치 계산
-        scaled_width = image_width * scale
-        scaled_height = image_height * scale
-        x_offset = (viewport_width - scaled_width) / 2
-        y_offset = (viewport_height - scaled_height) / 2
+        # 씬 크기를 이미지 크기로 설정
+        self.image_scene.setSceneRect(0, 0, image_width, image_height)
         
-        # 씬 크기 설정 및 중앙 정렬
-        self.image_scene.setSceneRect(image_item.boundingRect())
+        # 이미지를 뷰에 맞게 조정 (Qt의 내장 메서드 사용)
+        self.image_view.fitInView(self.image_scene.sceneRect(), Qt.KeepAspectRatio)
+        
+        # 중앙 정렬 확인
         self.image_view.centerOn(image_item)
-        
-        # 스크롤바 위치 조정으로 정확한 중앙 정렬
-        self.image_view.horizontalScrollBar().setValue(
-            int(self.image_view.horizontalScrollBar().maximum() / 2)
-        )
-        self.image_view.verticalScrollBar().setValue(
-            int(self.image_view.verticalScrollBar().maximum() / 2)
-        )
 
     def copy_prompt_to_clipboard(self):
         QApplication.clipboard().setText(self.prompt_input.toPlainText())
@@ -2916,7 +2907,7 @@ class PromptBook(QMainWindow):
                 delete_action = menu.addAction("🗑️ 모두 삭제")
                 
                 # 메뉴 실행 및 액션 처리
-                action = menu.exec_(self.char_list.mapToGlobal(position))
+                action = menu.exec(self.char_list.mapToGlobal(position))
                 if action == duplicate_action:
                     self.duplicate_multiple_characters(selected_items)
                 elif action == delete_action:
@@ -2988,7 +2979,7 @@ class PromptBook(QMainWindow):
             delete_action = menu.addAction("🗑️ 삭제")
             
             # 메뉴 표시 및 액션 처리
-            action = menu.exec_(self.char_list.mapToGlobal(position))
+            action = menu.exec(self.char_list.mapToGlobal(position))
             if action == favorite_action:
                 self.toggle_favorite_star(item)
             elif action == duplicate_action:
@@ -3038,7 +3029,7 @@ class PromptBook(QMainWindow):
                 delete_action = menu.addAction("🗑️ 모두 삭제")
                 
                 # 메뉴 실행 및 액션 처리
-                action = menu.exec_(self.book_list.mapToGlobal(position))
+                action = menu.exec(self.book_list.mapToGlobal(position))
                 if action == delete_action:
                     self.delete_multiple_books(selected_items)
                 return
@@ -3120,7 +3111,7 @@ class PromptBook(QMainWindow):
                     action.triggered.connect(lambda checked, e=emoji, i=item: self.set_book_emoji(i, e))
             
             # 메뉴 실행 및 액션 처리
-            action = menu.exec_(self.book_list.mapToGlobal(position))
+            action = menu.exec(self.book_list.mapToGlobal(position))
             if action == favorite_action:
                 self.toggle_book_favorite(item)
             elif action == rename_action:
@@ -4408,10 +4399,17 @@ class PromptBook(QMainWindow):
         if hasattr(self, 'main_splitter'):
             self.main_splitter.update_handle_width(theme_name)
         
-        # UI 설정에 테마 저장
-        self.save_ui_settings()
+        # UI 설정에 테마 저장 (지연 저장으로 성능 개선)
+        if not hasattr(self, '_save_timer'):
+            from PySide6.QtCore import QTimer
+            self._save_timer = QTimer()
+            self._save_timer.setSingleShot(True)
+            self._save_timer.timeout.connect(self.save_ui_settings)
         
-        print(f"[DEBUG] 테마 적용됨: {theme_name}")
+        # 500ms 후에 저장 (연속 테마 변경 시 마지막 것만 저장)
+        self._save_timer.start(500)
+        
+
     
     def apply_custom_theme(self):
         """커스텀 테마 적용 - 이미지 파일 선택"""
@@ -4476,39 +4474,40 @@ class PromptBook(QMainWindow):
     def apply_background_image(self, image_path):
         """배경 이미지를 적용합니다."""
         try:
-            from PySide6.QtGui import QPixmap
+            from PySide6.QtGui import QPixmap, QImageReader
             
-            # 이미지 로드
-            pixmap = QPixmap(image_path)
-            if pixmap.isNull():
+            # 고품질 이미지 리더 설정
+            reader = QImageReader(image_path)
+            reader.setAutoTransform(True)  # EXIF 정보 기반 자동 회전
+            reader.setDecideFormatFromContent(True)  # 파일 내용 기반으로 포맷 결정
+            reader.setQuality(100)  # 최고 품질 설정
+            
+            # 고품질 이미지 로딩
+            image = reader.read()
+            if image.isNull():
                 print(f"[ERROR] 이미지 로드 실패: {image_path}")
                 return
             
-            print(f"[DEBUG] 원본 이미지 크기: {pixmap.size()}")
-            print(f"[DEBUG] 윈도우 크기: {self.size()}")
+            # 이미지 품질 향상을 위한 변환 설정
+            pixmap = QPixmap.fromImage(image, Qt.PreferDither | Qt.AutoColor)
+            if pixmap.isNull():
+                print(f"[ERROR] 픽스맵 변환 실패: {image_path}")
+                return
             
             # 배경 이미지 저장
             self.background_pixmap = pixmap
-            
-            # 메인 윈도우에 배경 이미지 직접 설정
-            import os
-            image_path_fixed = os.path.abspath(image_path).replace('\\', '/')
-            print(f"[DEBUG] 배경 이미지 경로: {image_path_fixed}")
             
             # 중앙 위젯을 투명하게 설정
             central_widget = self.centralWidget()
             if central_widget:
                 central_widget.setAttribute(Qt.WA_TranslucentBackground, True)
                 central_widget.setStyleSheet("background: transparent;")
-                print(f"[DEBUG] 중앙 위젯을 투명하게 설정")
             
             # 커스텀 테마용 반투명 스타일 적용
             self.apply_custom_theme_transparency_new()
             
             # 윈도우 다시 그리기 (paintEvent가 호출됨)
             self.update()
-            
-            print(f"[DEBUG] 배경 이미지 적용됨: {image_path}")
             
         except Exception as e:
             print(f"[ERROR] 배경 이미지 적용 실패: {e}")
@@ -4530,42 +4529,65 @@ class PromptBook(QMainWindow):
             print(f"[ERROR] 배경 이미지 제거 실패: {e}")
 
     def paintEvent(self, event):
-        """커스텀 페인트 이벤트 - 배경 이미지 그리기"""
-        print(f"[DEBUG] paintEvent 호출됨")
-        
+        """커스텀 페인트 이벤트 - 배경 이미지 그리기 (윈도우 전체 채우기)"""
         # 배경 이미지가 있는 경우에만 그리기
         if hasattr(self, 'background_pixmap') and self.background_pixmap:
             from PySide6.QtGui import QPainter
             
-            print(f"[DEBUG] 배경 이미지 있음, 그리기 시작")
-            
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.setRenderHint(QPainter.TextAntialiasing)
+            painter.setRenderHint(QPainter.LosslessImageRendering)
             
-            # 윈도우 전체 크기에 맞게 이미지 스케일링
-            scaled_pixmap = self.background_pixmap.scaled(
-                self.size(),
-                Qt.KeepAspectRatioByExpanding,
-                Qt.SmoothTransformation
-            )
+            # 윈도우 크기
+            window_width = self.width()
+            window_height = self.height()
             
-            print(f"[DEBUG] 원본 이미지: {self.background_pixmap.size()}")
-            print(f"[DEBUG] 윈도우 크기: {self.size()}")
-            print(f"[DEBUG] 스케일된 이미지: {scaled_pixmap.size()}")
+            # 이미지 원본 크기
+            image_width = self.background_pixmap.width()
+            image_height = self.background_pixmap.height()
             
-            # 중앙 정렬을 위한 위치 계산
-            x = (self.width() - scaled_pixmap.width()) // 2
-            y = (self.height() - scaled_pixmap.height()) // 2
+            # 윈도우를 완전히 채우면서 비율 유지 (crop 방식)
+            scale_width = window_width / image_width
+            scale_height = window_height / image_height
+            scale = max(scale_width, scale_height)  # 큰 쪽 스케일 사용하여 완전히 채우기
             
-            print(f"[DEBUG] 그리기 위치: ({x}, {y})")
+            # 스케일된 이미지 크기 계산
+            scaled_width = int(image_width * scale)
+            scaled_height = int(image_height * scale)
+            
+            # 중앙 정렬을 위한 위치 계산 (이미지가 윈도우보다 클 수 있음)
+            x = (window_width - scaled_width) // 2
+            y = (window_height - scaled_height) // 2
+            
+            # 고품질 스케일링으로 이미지 그리기 (비율 유지)
+            # 큰 축소비율일 때 단계적 스케일링으로 계단현상 방지
+            if scale < 0.5:  # 50% 이하로 축소할 때
+                # 단계적 스케일링: 먼저 50%로 축소 후 최종 크기로 축소
+                intermediate_width = int(image_width * 0.5)
+                intermediate_height = int(image_height * 0.5)
+                intermediate_pixmap = self.background_pixmap.scaled(
+                    intermediate_width, intermediate_height,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation
+                )
+                scaled_pixmap = intermediate_pixmap.scaled(
+                    scaled_width, scaled_height,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation
+                )
+            else:
+                # 일반 스케일링
+                scaled_pixmap = self.background_pixmap.scaled(
+                    scaled_width, scaled_height,
+                    Qt.KeepAspectRatio,  # 비율 유지
+                    Qt.SmoothTransformation
+                )
             
             # 배경 이미지 그리기
             painter.drawPixmap(x, y, scaled_pixmap)
             painter.end()
-            
-            print(f"[DEBUG] 배경 이미지 그리기 완료")
-        else:
-            print(f"[DEBUG] 배경 이미지 없음")
         
         # 부모 클래스의 paintEvent 호출
         super().paintEvent(event)
@@ -4756,7 +4778,7 @@ class PromptBook(QMainWindow):
     def reset_viewport_transparency(self):
         """뷰포트 투명도만 초기화 (배경 이미지는 유지)"""
         try:
-            print("[DEBUG] 뷰포트 투명도 초기화 시작")
+    
             
             # 이미지 뷰 관련 초기화만 수행
             if hasattr(self, 'image_view'):
@@ -4777,9 +4799,7 @@ class PromptBook(QMainWindow):
                 self.image_view.update()
                 self.image_view.viewport().update()
                 
-                print("[DEBUG] 이미지 뷰 투명도 초기화 완료")
-            
-            print("[DEBUG] 뷰포트 투명도 초기화 완료")
+
             
         except Exception as e:
             print(f"[ERROR] 뷰포트 투명도 초기화 실패: {e}")
@@ -4796,8 +4816,6 @@ class PromptBook(QMainWindow):
             # 사용자 설정 투명도 레벨 사용
             transparency = self.custom_transparency_level
             
-            print(f"[DEBUG] 위젯별 투명도 직접 적용 시작 - 투명도 레벨: {transparency}")
-            
             # 검색창들 - 사용자 설정 투명도 + 5% 추가 (더 잘 보이도록)
             search_transparency = min(transparency + 0.05, 0.95)
             search_style = f"""
@@ -4811,22 +4829,18 @@ class PromptBook(QMainWindow):
             # 북 검색창
             if hasattr(self, 'book_search_input'):
                 self.book_search_input.setStyleSheet(search_style)
-                print("[DEBUG] 북 검색창 투명도 적용")
             
             # 페이지 검색창
             if hasattr(self, 'search_input'):
                 self.search_input.setStyleSheet(search_style)
-                print("[DEBUG] 페이지 검색창 투명도 적용")
             
             # 이름 입력란
             if hasattr(self, 'name_input'):
                 self.name_input.setStyleSheet(search_style)
-                print("[DEBUG] 이름 입력란 투명도 적용")
             
             # 태그 입력란
             if hasattr(self, 'tag_input'):
                 self.tag_input.setStyleSheet(search_style)
-                print("[DEBUG] 태그 입력란 투명도 적용")
             
             # 북 리스트 - 사용자 설정 투명도
             list_style = f"""
@@ -4853,11 +4867,9 @@ class PromptBook(QMainWindow):
             
             if hasattr(self, 'book_list'):
                 self.book_list.setStyleSheet(list_style)
-                print("[DEBUG] 북 리스트 투명도 적용")
             
             if hasattr(self, 'char_list'):
                 self.char_list.setStyleSheet(list_style)
-                print("[DEBUG] 페이지 리스트 투명도 적용")
             
             # 텍스트 입력 - 사용자 설정 투명도 - 5% (약간 더 투명하게)
             text_transparency = max(transparency - 0.05, 0.05)
@@ -4870,29 +4882,22 @@ class PromptBook(QMainWindow):
             """
             
             if hasattr(self, 'prompt_input'):
-                print(f"[DEBUG] prompt_input 타입: {type(self.prompt_input)}")
                 self.prompt_input.setStyleSheet(text_style)
-                print("[DEBUG] 설명 입력란 투명도 적용")
-            else:
-                print("[DEBUG] prompt_input 속성이 없음")
             
             # 모든 QTextEdit 찾아서 적용
             text_edits = self.findChildren(QTextEdit)
             for text_edit in text_edits:
                 text_edit.setStyleSheet(text_style)
-            print(f"[DEBUG] {len(text_edits)} 개 QTextEdit 투명도 적용")
             
             # CustomLineEdit도 찾아서 적용
             custom_line_edits = self.findChildren(CustomLineEdit)
             for custom_edit in custom_line_edits:
                 custom_edit.setStyleSheet(text_style)
-            print(f"[DEBUG] {len(custom_line_edits)} 개 CustomLineEdit 투명도 적용")
             
             # QPlainTextEdit도 찾아서 적용
             plain_text_edits = self.findChildren(QPlainTextEdit)
             for plain_edit in plain_text_edits:
                 plain_edit.setStyleSheet(text_style)
-            print(f"[DEBUG] {len(plain_text_edits)} 개 QPlainTextEdit 투명도 적용")
             
             # 버튼들 - 사용자 설정 투명도 - 10% (더 투명하게)
             button_transparency = max(transparency - 0.10, 0.05)
@@ -4910,12 +4915,10 @@ class PromptBook(QMainWindow):
             for button in buttons:
                 # 타이틀바 버튼들은 제외
                 if button not in [getattr(self, 'menu_btn', None), 
-                                getattr(self, 'donate_btn', None),
                                 getattr(self, 'minimize_btn', None), 
                                 getattr(self, 'maximize_btn', None), 
                                 getattr(self, 'close_btn', None)]:
                     button.setStyleSheet(button_style)
-            print(f"[DEBUG] {len(buttons)} 개 버튼 투명도 적용")
             
             # 드롭다운 메뉴 - 사용자 설정 투명도
             combo_style = f"""
@@ -4930,7 +4933,6 @@ class PromptBook(QMainWindow):
             combos = self.findChildren(QComboBox)
             for combo in combos:
                 combo.setStyleSheet(combo_style)
-            print(f"[DEBUG] {len(combos)} 개 드롭다운 투명도 적용")
             
             # 이미지 뷰포트 - 초기화 후 새로운 투명도 적용
             image_transparency = transparency  # 사용자 설정 그대로
@@ -4952,8 +4954,6 @@ class PromptBook(QMainWindow):
                 # 씬도 완전 투명하게 유지 (중첩 방지)
                 if hasattr(self.image_view, 'scene') and self.image_view.scene():
                     self.image_view.scene().setBackgroundBrush(QBrush(QColor(0, 0, 0, 0)))  # 완전 투명
-                
-                print(f"[DEBUG] 이미지 뷰포트 투명도 재적용 ({int(image_transparency*100)}% 불투명, 뷰포트/씬은 투명)")
             
             # 스플리터 핸들 - 사용자 설정의 30% 수준
             splitter_style = f"""
@@ -5021,13 +5021,7 @@ class PromptBook(QMainWindow):
                     if hasattr(splitter, 'setHandleWidth'):
                         splitter.setHandleWidth(10)
             
-            if self.current_theme == "커스텀 테마":
-                print(f"[DEBUG] {len(splitters)} 개 스플리터 완전히 숨김 (기능 유지)")
-            else:
-                print(f"[DEBUG] {len(splitters)} 개 스플리터 투명도 적용")
-            print(f"[DEBUG] {len(splitters)} 개 스플리터 완전히 비활성화")
-            
-            print(f"[DEBUG] 부분별 투명도 적용 완료 - 기본:{int(transparency*100)}%, 검색창:{int(search_transparency*100)}%, 텍스트:{int(text_transparency*100)}%, 버튼:{int(button_transparency*100)}%, 이미지뷰:{int(image_transparency*100)}%")
+
             
         except Exception as e:
             print(f"[ERROR] 투명도 적용 실패: {e}")
@@ -5054,9 +5048,8 @@ class PromptBook(QMainWindow):
                 if hasattr(self.image_view, 'scene') and self.image_view.scene():
                     self.image_view.scene().setBackgroundBrush(QBrush(background_color))
             
-            # 현재 테마 다시 적용하여 투명도 제거
-            if hasattr(self, 'current_theme'):
-                self.apply_theme(self.current_theme)
+            # 무한 재귀 방지: apply_theme 호출하지 않음
+            # 대신 필요한 스타일만 직접 복원
             
         except Exception as e:
             print(f"[ERROR] 투명도 제거 실패: {e}")
@@ -5073,25 +5066,58 @@ class PromptBook(QMainWindow):
             return "128, 128, 128"  # 기본값
 
     def set_central_widget_background(self, image_path):
-        """중앙 위젯에 배경 이미지 설정 (대안 방법)"""
+        """중앙 위젯에 배경 이미지 설정 (이미지 뷰어처럼 자동 크기 조절)"""
         try:
             central_widget = self.centralWidget()
-            if central_widget:
+            if central_widget and os.path.exists(image_path):
                 # 경로 수정 (Qt 호환성)
                 image_path_fixed = image_path.replace('\\', '/')
                 
-                # 중앙 위젯에 배경 이미지 스타일 적용
-                background_style = f"""
-                QWidget {{
-                    background-image: url({image_path_fixed});
-                    background-repeat: no-repeat;
-                    background-position: center center;
-                    background-attachment: fixed;
-                }}
-                """
+                # 이미지 크기 정보 가져오기
+                from PySide6.QtGui import QPixmap
+                pixmap = QPixmap(image_path)
+                if not pixmap.isNull():
+                    # 창 크기 가져오기
+                    window_size = self.size()
+                    window_width = window_size.width()
+                    window_height = window_size.height()
+                    
+                    # 이미지 원본 크기
+                    image_width = pixmap.width()
+                    image_height = pixmap.height()
+                    
+                    # 이미지 뷰어와 동일한 비율 계산 로직
+                    scale_width = window_width / image_width
+                    scale_height = window_height / image_height
+                    scale = min(scale_width, scale_height)
+                    
+                    # 스케일된 이미지 크기 계산
+                    scaled_width = int(image_width * scale)
+                    scaled_height = int(image_height * scale)
+                    
+                    # 중앙 위젯에 배경 이미지 스타일 적용 (크기 조절 포함)
+                    background_style = f"""
+                    QWidget {{
+                        background-image: url({image_path_fixed});
+                        background-repeat: no-repeat;
+                        background-position: center center;
+                        background-size: {scaled_width}px {scaled_height}px;
+                        background-attachment: fixed;
+                    }}
+                    """
+                else:
+                    # 이미지 로드 실패 시 기본 설정 (contain 사용)
+                    background_style = f"""
+                    QWidget {{
+                        background-image: url({image_path_fixed});
+                        background-repeat: no-repeat;
+                        background-position: center center;
+                        background-size: contain;
+                        background-attachment: fixed;
+                    }}
+                    """
                 
                 central_widget.setStyleSheet(background_style)
-                print(f"[DEBUG] 중앙 위젯에 배경 이미지 설정: {image_path}")
                 
         except Exception as e:
             print(f"[ERROR] 중앙 위젯 배경 설정 실패: {e}")
@@ -5162,8 +5188,7 @@ class PromptBook(QMainWindow):
             self.menu_btn.setStyleSheet(menu_button_style)
         if hasattr(self, 'title_label'):
             self.title_label.setStyleSheet(title_label_style)
-        if hasattr(self, 'donate_btn'):
-            self.donate_btn.setStyleSheet(button_style)
+
         if hasattr(self, 'minimize_btn'):
             self.minimize_btn.setStyleSheet(button_style)
         if hasattr(self, 'maximize_btn'):
@@ -5362,10 +5387,7 @@ class PromptBook(QMainWindow):
         self.title_label.setMinimumWidth(200)  # 최소 너비 설정
         # 스타일은 update_title_bar_style()에서 설정됨
 
-        # Donate 버튼
-        self.donate_btn = QPushButton("💖 Donate")
-        self.donate_btn.setToolTip("카카오페이로 후원해주세요!")
-        self.donate_btn.clicked.connect(self.show_kakao_info)
+
         
         # 윈도우 컨트롤 버튼들
         self.minimize_btn = QPushButton("－")
@@ -5387,7 +5409,6 @@ class PromptBook(QMainWindow):
         title_layout.addStretch()  # 왼쪽 여백
         title_layout.addWidget(self.title_label)
         title_layout.addStretch()  # 오른쪽 여백
-        title_layout.addWidget(self.donate_btn)
         title_layout.addWidget(self.minimize_btn)
         title_layout.addWidget(self.maximize_btn)
         title_layout.addWidget(self.close_btn)
@@ -5527,16 +5548,6 @@ class PromptBook(QMainWindow):
             else:
                 action.setChecked(False)
         
-        # 도움말 메뉴
-        menu.addSeparator()
-        
-        # 단축키 안내
-        shortcuts_action = QAction("⌨️ 단축키 안내", self)
-        shortcuts_action.triggered.connect(self.show_shortcuts_help)
-        menu.addAction(shortcuts_action)
-        
-        menu.addSeparator()
-        
         # 옵션 메뉴
         options_menu = menu.addMenu("⚙️ 옵션")
         options_menu.setStyleSheet(menu_style)
@@ -5552,7 +5563,15 @@ class PromptBook(QMainWindow):
             custom_transparency_action.triggered.connect(self.adjust_custom_theme_transparency)
             options_menu.addAction(custom_transparency_action)
         
-        menu.addSeparator()
+        # 후원 메뉴
+        donate_action = QAction("💖 Donate", self)
+        donate_action.triggered.connect(self.show_kakao_info)
+        menu.addAction(donate_action)
+        
+        # 단축키 안내
+        shortcuts_action = QAction("⌨️ 단축키 안내", self)
+        shortcuts_action.triggered.connect(self.show_shortcuts_help)
+        menu.addAction(shortcuts_action)
         
         # 사용자 매뉴얼
         manual_action = QAction("📖 사용자 매뉴얼", self)
@@ -5561,7 +5580,7 @@ class PromptBook(QMainWindow):
         
         # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
         button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
-        menu.exec_(button_pos)
+        menu.exec(button_pos)
 
     def show_donate_options(self):
         """후원 옵션 메뉴 표시"""
@@ -5583,9 +5602,9 @@ class PromptBook(QMainWindow):
         kakao_action.triggered.connect(self.show_kakao_info)
         menu.addAction(kakao_action)
         
-        # 메뉴 표시 위치 계산
-        button_pos = self.donate_btn.mapToGlobal(self.donate_btn.rect().bottomLeft())
-        menu.exec_(button_pos)
+        # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
+        button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
+        menu.exec(button_pos)
     
     def open_url(self, url):
         """URL을 기본 브라우저에서 열기"""
@@ -6157,10 +6176,21 @@ class PromptBook(QMainWindow):
 
 <h4>상단 타이틀 바</h4>
 <ul>
-<li><strong>☰ 메뉴 버튼:</strong> 메인 메뉴 접근</li>
-<li><strong>💖 Donate 버튼:</strong> 후원 정보</li>
+<li><strong>☰ 햄버거 메뉴:</strong> 모든 주요 기능 접근</li>
 <li><strong>윈도우 컨트롤:</strong> 최소화, 최대화, 닫기</li>
 </ul>
+
+<h4>햄버거 메뉴 구조</h4>
+<ul>
+<li><strong>📁 파일:</strong> 선택된 북 저장하기, 저장된 북 불러오기</li>
+<li><strong>🎨 테마:</strong> 모든 테마 선택 (어두운 모드, 밝은 모드, 컬러 테마, 네온 테마, 커스텀 테마)</li>
+<li><strong>⚙️ 옵션:</strong> 윈도우 투명도 조절, 커스텀 테마 투명도 조절</li>
+<li><strong>💖 Donate:</strong> 카카오페이 후원 QR코드</li>
+<li><strong>⌨️ 단축키 안내:</strong> 모든 단축키 목록과 사용법</li>
+<li><strong>📖 사용자 매뉴얼:</strong> 상세한 사용법 가이드</li>
+</ul>
+
+<p><strong>💡 참고:</strong> "사용되지 않는 이미지 정리" 기능은 파일 메뉴에서 사용할 수 있습니다.</p>
 
 <h4>왼쪽 패널 - 북 관리</h4>
 <ul>
@@ -6181,6 +6211,7 @@ class PromptBook(QMainWindow):
 <li><strong>페이지 정보:</strong> 이름, 태그, 설명</li>
 <li><strong>프롬프트 내용:</strong> 메인 텍스트 편집 영역</li>
 <li><strong>이미지 뷰어:</strong> 첨부된 이미지 표시</li>
+<li><strong>이미지 버튼들:</strong> 이미지 불러오기, 이미지 제거</li>
 <li><strong>액션 버튼들:</strong> 저장, 복사, 복제 등</li>
 </ul>
                 """,
@@ -6316,13 +6347,7 @@ class PromptBook(QMainWindow):
 <li>이미지가 즉시 제거됨</li>
 </ol>
 
-<h3>이미지 정리 기능</h3>
-<p><strong>자동 정리:</strong></p>
-<ul>
-<li>사용되지 않는 이미지 자동 감지</li>
-<li>메뉴에서 <strong>"사용되지 않는 이미지 정리"</strong> 선택</li>
-<li>확인 후 휴지통으로 이동</li>
-</ul>
+
                 """,
                 "children": {}
             },
@@ -6518,12 +6543,38 @@ class PromptBook(QMainWindow):
 <li>💖 <strong>핑크 네온:</strong> 사이버펑크 핑크</li>
 </ul>
 
+<h3>커스텀 테마</h3>
+<p><strong>커스텀 테마 설정:</strong></p>
+<ol>
+<li>☰ 메뉴 → <strong>"테마"</strong> → <strong>"커스텀 테마"</strong> 선택</li>
+<li>배경 이미지 파일 선택 (PNG, JPG, JPEG, BMP, GIF, TIFF, WEBP)</li>
+<li>프로그램 재시작 확인 대화상자에서 <strong>"재시작"</strong> 선택</li>
+<li>재시작 후 배경 이미지가 적용된 커스텀 테마 사용</li>
+</ol>
+
+<p><strong>커스텀 테마 특징:</strong></p>
+<ul>
+<li><strong>배경 이미지:</strong> 선택한 이미지가 창 전체 배경으로 적용</li>
+<li><strong>투명도 조절:</strong> UI 요소들의 투명도를 개별 조절 가능</li>
+<li><strong>자동 크기 조절:</strong> 이미지가 창 크기에 맞게 자동 조절</li>
+<li><strong>고품질 렌더링:</strong> 부드러운 이미지 변환으로 고품질 표시</li>
+</ul>
+
+<p><strong>⚠️ 주의사항:</strong></p>
+<ul>
+<li>커스텀 테마 적용 시 프로그램 재시작 필요</li>
+<li>너무 밝거나 복잡한 이미지는 텍스트 가독성 저하</li>
+<li>어두운 톤의 이미지 권장</li>
+<li>고해상도 이미지 사용 시 성능 고려</li>
+</ul>
+
 <h3>테마 특징</h3>
 <ul>
 <li>모든 테마는 눈의 피로를 최소화하도록 설계</li>
 <li>텍스트 가독성 최우선 고려</li>
 <li>다크/라이트 모드 모두 지원</li>
 <li>테마 설정은 자동 저장됨</li>
+<li>커스텀 테마로 개인화 가능</li>
 </ul>
 
 <h3>UI 커스터마이징</h3>
@@ -6546,6 +6597,54 @@ class PromptBook(QMainWindow):
 <li>타이틀 바를 드래그하여 창 이동</li>
 <li>더블클릭으로 최대화/복원</li>
 </ul>
+                """,
+                "children": {}
+            },
+            "⚙️ 옵션": {
+                "content": """
+<h2>⚙️ 옵션 및 고급 설정</h2>
+
+<h3>투명도 설정</h3>
+<p><strong>창 투명도 조절:</strong></p>
+<ol>
+<li>☰ 메뉴 → <strong>"옵션"</strong> → <strong>"윈도우 투명도 조절"</strong></li>
+<li>슬라이더로 투명도 조절 (10% ~ 100%)</li>
+<li>실시간으로 변경 사항 확인</li>
+<li><strong>"적용"</strong> 버튼으로 설정 저장</li>
+</ol>
+
+<p><strong>커스텀 테마 투명도:</strong></p>
+<ol>
+<li>먼저 <strong>커스텀 테마</strong>를 선택해야 함</li>
+<li>☰ 메뉴 → <strong>"옵션"</strong> → <strong>"커스텀 테마 투명도 조절"</strong></li>
+<li>배경과 UI 요소의 투명도 개별 조절</li>
+<li>더욱 세밀한 투명도 제어 가능</li>
+<li>실시간 미리보기 지원</li>
+</ol>
+
+<p><strong>💡 투명도 사용 팁:</strong></p>
+<ul>
+<li>다른 프로그램과 함께 사용할 때 유용</li>
+<li>배경 화면을 보면서 작업할 때</li>
+<li>미니멀한 UI 선호 시</li>
+<li>멀티 모니터 환경에서 효과적</li>
+</ul>
+
+
+
+<h3>성능 최적화 팁</h3>
+<p><strong>투명도 관련:</strong></p>
+<ul>
+<li>너무 많은 투명도 사용 시 성능 저하 가능</li>
+<li>Windows 10 이상에서 최적화됨</li>
+<li>그래픽 드라이버 최신 버전 권장</li>
+</ul>
+
+ <p><strong>이미지 관리:</strong></p>
+ <ul>
+ <li>너무 큰 이미지 파일은 성능에 영향</li>
+ <li>적절한 해상도 사용 권장</li>
+ </ul>
                 """,
                 "children": {}
             },
@@ -6621,20 +6720,7 @@ class PromptBook(QMainWindow):
                 "content": """
 <h2>🔧 고급 기능</h2>
 
-<h3>이미지 자동 정리</h3>
-<p><strong>기능 설명:</strong></p>
-<ul>
-<li>사용되지 않는 이미지 파일 자동 감지</li>
-<li>휴지통으로 안전하게 이동</li>
-<li>디스크 공간 절약</li>
-</ul>
 
-<p><strong>사용 방법:</strong></p>
-<ol>
-<li><strong>☰ 메뉴</strong> → <strong>"사용되지 않는 이미지 정리"</strong></li>
-<li>정리 대상 이미지 목록 확인</li>
-<li><strong>"예"</strong> 클릭하여 휴지통으로 이동</li>
-</ol>
 
 <h3>검색 고급 팁</h3>
 <p><strong>태그 활용:</strong></p>
@@ -6700,95 +6786,7 @@ class PromptBook(QMainWindow):
                 """,
                 "children": {}
             },
-                         "❓ 문제 해결": {
-                 "content": """
- <h2>❓ 문제 해결</h2>
- 
- <h3>일반적인 문제</h3>
- <p><strong>Q: 프로그램이 시작되지 않아요</strong></p>
- <p>A:</p>
- <ul>
- <li>Windows Defender나 백신 프로그램 확인</li>
- <li>관리자 권한으로 실행 시도</li>
- <li>최신 버전 다운로드 후 재설치</li>
- </ul>
- 
- <p><strong>Q: 데이터가 사라졌어요</strong></p>
- <p>A:</p>
- <ul>
- <li>character_data.json 파일 확인</li>
- <li>이전에 저장한 ZIP 백업 파일이 있다면 불러오기</li>
- <li>프로그램 재시작 후 확인</li>
- </ul>
- 
- <p><strong>Q: 이미지가 표시되지 않아요</strong></p>
- <p>A:</p>
- <ul>
- <li>images/ 폴더 존재 확인</li>
- <li>이미지 파일 형식 확인 (PNG, JPG 등)</li>
- <li>파일 경로에 특수문자 없는지 확인</li>
- </ul>
- 
- <h3>성능 최적화</h3>
- <p><strong>느린 실행 속도:</strong></p>
- <ul>
- <li>☰ 메뉴 → "사용되지 않는 이미지 정리" 사용</li>
- <li>너무 큰 이미지 파일 크기 줄이기</li>
- <li>페이지 수가 많다면 북 분할 고려</li>
- </ul>
- 
- <p><strong>메모리 사용량:</strong></p>
- <ul>
- <li>프로그램 재시작으로 메모리 정리</li>
- <li>불필요한 이미지 제거</li>
- <li>다른 프로그램과 동시 실행 최소화</li>
- </ul>
- 
- <h3>데이터 보호 방법</h3>
- <p><strong>정기적인 백업:</strong></p>
- <ul>
- <li>중요한 북은 "선택된 북 저장하기"로 ZIP 파일 백업</li>
- <li>여러 위치에 백업 파일 보관</li>
- <li>정기적으로 백업 파일 복원 테스트</li>
- </ul>
- 
- <p><strong>실시간 저장 활용:</strong></p>
- <ul>
- <li>편집 내용은 자동으로 저장됨</li>
- <li>Ctrl+S로 수동 저장 가능</li>
- <li>프로그램 종료 시 자동 저장</li>
- </ul>
- 
- <h3>호환성 문제</h3>
- <p><strong>Windows 버전:</strong></p>
- <ul>
- <li>Windows 10 이상 권장</li>
- <li>Python 및 PySide6 환경 필요</li>
- </ul>
- 
- <p><strong>파일 경로:</strong></p>
- <ul>
- <li>한글 경로 지원</li>
- <li>특수문자는 피하는 것이 좋음</li>
- <li>너무 긴 경로명 주의</li>
- </ul>
- 
- <h3>연락처 및 지원</h3>
- <p><strong>버그 신고:</strong></p>
- <ul>
- <li>구체적인 재현 방법 기술</li>
- <li>스크린샷 첨부</li>
- <li>시스템 환경 정보 포함</li>
- </ul>
- 
- <p><strong>기능 제안:</strong></p>
- <ul>
- <li>사용 시나리오와 함께 제안</li>
- <li>기존 기능과의 연관성 고려</li>
- </ul>
-                 """,
-                 "children": {}
-             }
+
         }
         
         # 트리 아이템 생성 및 내용 매핑
