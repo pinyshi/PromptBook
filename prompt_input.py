@@ -331,39 +331,59 @@ class PromptInput(QMainWindow):
             import tempfile
             import atexit
             import warnings
+            import shutil
             
-            # 임시 폴더 관련 경고 무시
-            warnings.filterwarnings("ignore", category=ResourceWarning)
-            warnings.filterwarnings("ignore", message=".*temporary directory.*")
+            # 모든 경고 무시
+            warnings.filterwarnings("ignore")
             
             # PyInstaller 관련 임시 폴더 정리 에러 무시
             if hasattr(sys, '_MEIPASS'):
-                # PyInstaller 환경에서 실행 중일 때
+                # 1. tempfile 모듈의 cleanup 함수 래핑
                 original_cleanup = tempfile._cleanup
-                
                 def silent_cleanup(*args, **kwargs):
                     try:
                         return original_cleanup(*args, **kwargs)
-                    except (OSError, PermissionError, FileNotFoundError):
-                        # 임시 폴더 정리 에러 무시
+                    except:
                         pass
-                
                 tempfile._cleanup = silent_cleanup
                 
-                # atexit 핸들러도 에러 무시하도록 수정
+                # 2. shutil.rmtree 함수 래핑 (임시 폴더 삭제용)
+                original_rmtree = shutil.rmtree
+                def silent_rmtree(*args, **kwargs):
+                    try:
+                        return original_rmtree(*args, **kwargs)
+                    except:
+                        pass
+                shutil.rmtree = silent_rmtree
+                
+                # 3. atexit 핸들러 모두 제거하고 새로 등록
+                atexit._clear()
                 def silent_exit_handler():
                     try:
-                        # 기존 atexit 핸들러들 실행
+                        pass  # 아무것도 하지 않음
+                    except:
                         pass
-                    except (OSError, PermissionError, FileNotFoundError):
-                        # 종료 시 임시 폴더 정리 에러 무시
-                        pass
-                
                 atexit.register(silent_exit_handler)
+                
+                # 4. Windows 시스템 에러 팝업 무시 (ctypes 사용)
+                try:
+                    import ctypes
+                    from ctypes import wintypes
+                    
+                    # SetErrorMode로 시스템 에러 팝업 무시
+                    SEM_FAILCRITICALERRORS = 0x0001
+                    SEM_NOGPFAULTERRORBOX = 0x0002
+                    SEM_NOOPENFILEERRORBOX = 0x8000
+                    
+                    error_mode = SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+                    ctypes.windll.kernel32.SetErrorMode(error_mode)
+                    
+                except Exception:
+                    pass  # ctypes 실패해도 계속 진행
                 
         except Exception as e:
             # 에러 무시 설정 자체가 실패해도 프로그램은 계속 실행
-            print(f"[DEBUG] 임시 폴더 에러 무시 설정 실패: {e}")
+            pass
 
 
 class LogDialog(QDialog):
