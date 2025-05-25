@@ -203,11 +203,18 @@ class PromptInput(QMainWindow):
         self.setWindowTitle(f"프롬프트 입력기 {self.VERSION}")
         self.setFixedSize(600, 300)
         
-        # 아이콘 설정 (프롬프트북과 동일)
-        if os.path.exists("icon.png"):
-            self.setWindowIcon(QIcon("icon.png"))
-        elif os.path.exists("icon.ico"):
-            self.setWindowIcon(QIcon("icon.ico"))
+        # 아이콘 설정 (실행 파일 위치 기준)
+        icon_path = os.path.join(get_app_directory(), "icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            # 개발 환경에서는 현재 디렉토리의 아이콘 사용
+            if os.path.exists("icon.ico"):
+                self.setWindowIcon(QIcon("icon.ico"))
+            elif os.path.exists("icon.png"):
+                self.setWindowIcon(QIcon("icon.png"))
+            else:
+                print("[DEBUG] 아이콘 파일을 찾을 수 없습니다.")
         
         # 중앙 위젯
         central_widget = QWidget()
