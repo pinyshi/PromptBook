@@ -621,6 +621,11 @@ class CustomSplitterHandle(QSplitterHandle):
         
         if main_window:
             current_theme = getattr(main_window, 'current_theme', '어두운 모드')
+            
+            # 커스텀 테마인 경우 아무것도 그리지 않음
+            if current_theme == "커스텀 테마":
+                return
+            
             theme = main_window.THEMES.get(current_theme, main_window.THEMES['어두운 모드'])
             
             # 배경색을 메인 배경색과 통일
@@ -672,6 +677,13 @@ class CustomSplitter(QSplitter):
     
     def createHandle(self):
         return CustomSplitterHandle(self.orientation(), self)
+    
+    def update_handle_width(self, theme_name):
+        """테마에 따라 핸들 너비 조정"""
+        if theme_name == "커스텀 테마":
+            self.setHandleWidth(0)  # 커스텀 테마에서는 완전히 숨김
+        else:
+            self.setHandleWidth(6)  # 다른 테마에서는 기본값
 
 class ResizeHandle(QWidget):
     """투명한 윈도우 리사이즈 핸들"""
@@ -819,7 +831,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.2"
+    VERSION = "v2.2.3"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -1111,6 +1123,9 @@ class PromptBook(QMainWindow):
         
         # 커스텀 배경 이미지 경로
         self.custom_background_image = None
+        
+        # 커스텀 테마 투명도 설정 (기본값: 중간 투명도)
+        self.custom_transparency_level = 0.5  # 0.0 (완전 투명) ~ 1.0 (완전 불투명)
         
         # 도구 메뉴 추가
         tools_menu = menubar.addMenu("🔧 도구")
@@ -1684,7 +1699,7 @@ class PromptBook(QMainWindow):
             
         self.update_all_buttons_state()
         self.update_image_buttons_state()
-    
+
     def on_lock_changed(self):
         """잠금 상태가 변경되었을 때 실행되는 함수"""
         if self.current_index >= 0 and self.current_index < len(self.state.characters):
@@ -1712,7 +1727,8 @@ class PromptBook(QMainWindow):
             "book_sort_mode": self.book_sort_selector.currentText() if hasattr(self, "book_sort_selector") else "오름차순 정렬",
             "book_sort_custom": getattr(self, "book_sort_custom", False),
             "current_theme": getattr(self, "current_theme", "어두운 모드"),
-            "custom_background_image": getattr(self, "custom_background_image", None)
+            "custom_background_image": getattr(self, "custom_background_image", None),
+            "custom_transparency_level": getattr(self, "custom_transparency_level", 0.5)
         }
         try:
             with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
@@ -1737,7 +1753,10 @@ class PromptBook(QMainWindow):
                 
                 # 커스텀 배경 이미지 복원
                 self.custom_background_image = settings.get("custom_background_image", None)
-                        
+                
+                # 커스텀 투명도 설정 복원
+                self.custom_transparency_level = settings.get("custom_transparency_level", 0.5)
+            
         except Exception as e:
             print(f"[ERROR] 초기 UI 설정 불러오기 실패: {e}")
     
@@ -2878,105 +2897,105 @@ class PromptBook(QMainWindow):
         if not item:
             return
             
-        menu = QMenu()
-        
-        # 메뉴 스타일 적용
-        menu_style = self.get_menu_style()
-        menu.setStyleSheet(menu_style)
-        
-        # 선택된 아이템들 확인
-        selected_items = self.char_list.selectedItems()
-        selected_count = len(selected_items)
-        
-        if selected_count > 1:
-            # 다중 선택된 경우
-            menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
+            menu = QMenu()
+            
+            # 메뉴 스타일 적용
+            menu_style = self.get_menu_style()
+            menu.setStyleSheet(menu_style)
+            
+            # 선택된 아이템들 확인
+            selected_items = self.char_list.selectedItems()
+            selected_count = len(selected_items)
+            
+            if selected_count > 1:
+                # 다중 선택된 경우
+                menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
+                menu.addSeparator()
+                
+                duplicate_action = menu.addAction("📋 모두 복제")
+                delete_action = menu.addAction("🗑️ 모두 삭제")
+                
+                # 메뉴 실행 및 액션 처리
+                action = menu.exec_(self.char_list.mapToGlobal(position))
+                if action == duplicate_action:
+                    self.duplicate_multiple_characters(selected_items)
+                elif action == delete_action:
+                    self.delete_multiple_characters(selected_items)
+                return
+            
+            # 단일 선택인 경우 기존 메뉴
+            name = item.data(Qt.UserRole)
+            is_favorite = False
+            
+            # 현재 즐겨찾기 상태 확인
+            for char in self.state.characters:
+                if char.get("name") == name:
+                    is_favorite = char.get("favorite", False)
+                    break
+            
+            # 즐겨찾기 액션 추가
+            if is_favorite:
+                favorite_action = menu.addAction("🖤 즐겨찾기 해제")
+            else:
+                favorite_action = menu.addAction("❤️ 즐겨찾기")
+            
+            # 구분선 추가
             menu.addSeparator()
             
-            duplicate_action = menu.addAction("📋 모두 복제")
-            delete_action = menu.addAction("🗑️ 모두 삭제")
+            # 이모지 변경 서브메뉴
+            emoji_menu = QMenu("🔄 이모지 변경")
+            emoji_menu.setStyleSheet("""
+                QMenu {
+                    padding: 2px;
+                }
+                QMenu::item {
+                    padding: 4px 16px 4px 4px;
+                    margin: 0px;
+                }
+                QMenu::item:selected {
+                    background-color: #505050;
+                    color: white;
+                }
+                QMenu::item:hover {
+                    background-color: #505050;
+                    color: white;
+                }
+            """)
+            menu.addMenu(emoji_menu)
             
-            # 메뉴 실행 및 액션 처리
+            # 페이지용 이모지 옵션 그룹화
+            page_emoji_groups = {
+                "페이지": ["📄", "📃", "🗒️", "📑", "🧾", "📰", "🗞️", "📋", "📌", "📎"],
+                "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
+                "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
+                "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
+                "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
+            }
+            
+            for group_name, emojis in page_emoji_groups.items():
+                group_menu = QMenu(group_name)
+                group_menu.setStyleSheet(menu_style)
+                emoji_menu.addMenu(group_menu)
+                for emoji in emojis:
+                    action = group_menu.addAction(emoji)
+                    action.triggered.connect(lambda checked, e=emoji, i=item: self.set_page_emoji(i, e))
+            
+            # 구분선 추가
+            menu.addSeparator()
+            
+            # 기타 액션들 추가
+            duplicate_action = menu.addAction("📋 복제")
+            delete_action = menu.addAction("🗑️ 삭제")
+            
+            # 메뉴 표시 및 액션 처리
             action = menu.exec_(self.char_list.mapToGlobal(position))
-            if action == duplicate_action:
-                self.duplicate_multiple_characters(selected_items)
+            if action == favorite_action:
+                self.toggle_favorite_star(item)
+            elif action == duplicate_action:
+                self.duplicate_selected_character()
             elif action == delete_action:
-                self.delete_multiple_characters(selected_items)
-            return
+                self.delete_selected_character()
         
-        # 단일 선택인 경우 기존 메뉴
-        name = item.data(Qt.UserRole)
-        is_favorite = False
-        
-        # 현재 즐겨찾기 상태 확인
-        for char in self.state.characters:
-            if char.get("name") == name:
-                is_favorite = char.get("favorite", False)
-                break
-        
-        # 즐겨찾기 액션 추가
-        if is_favorite:
-            favorite_action = menu.addAction("🖤 즐겨찾기 해제")
-        else:
-            favorite_action = menu.addAction("❤️ 즐겨찾기")
-        
-        # 구분선 추가
-        menu.addSeparator()
-        
-        # 이모지 변경 서브메뉴
-        emoji_menu = QMenu("🔄 이모지 변경")
-        emoji_menu.setStyleSheet("""
-            QMenu {
-                padding: 2px;
-            }
-            QMenu::item {
-                padding: 4px 16px 4px 4px;
-                margin: 0px;
-            }
-            QMenu::item:selected {
-                background-color: #505050;
-                color: white;
-            }
-            QMenu::item:hover {
-                background-color: #505050;
-                color: white;
-            }
-        """)
-        menu.addMenu(emoji_menu)
-        
-        # 페이지용 이모지 옵션 그룹화
-        page_emoji_groups = {
-            "페이지": ["📄", "📃", "🗒️", "📑", "🧾", "📰", "🗞️", "📋", "📌", "📎"],
-            "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
-            "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
-            "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
-            "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
-        }
-        
-        for group_name, emojis in page_emoji_groups.items():
-            group_menu = QMenu(group_name)
-            group_menu.setStyleSheet(menu_style)
-            emoji_menu.addMenu(group_menu)
-            for emoji in emojis:
-                action = group_menu.addAction(emoji)
-                action.triggered.connect(lambda checked, e=emoji, i=item: self.set_page_emoji(i, e))
-        
-        # 구분선 추가
-        menu.addSeparator()
-        
-        # 기타 액션들 추가
-        duplicate_action = menu.addAction("📋 복제")
-        delete_action = menu.addAction("🗑️ 삭제")
-        
-        # 메뉴 표시 및 액션 처리
-        action = menu.exec_(self.char_list.mapToGlobal(position))
-        if action == favorite_action:
-            self.toggle_favorite_star(item)
-        elif action == duplicate_action:
-            self.duplicate_selected_character()
-        elif action == delete_action:
-            self.delete_selected_character()
-    
     def set_page_emoji(self, item, emoji):
         """페이지 이모지를 변경합니다."""
         name = item.data(Qt.UserRole)
@@ -3002,83 +3021,53 @@ class PromptBook(QMainWindow):
         if not item:
             return
             
-        menu = QMenu()
-        # 메뉴 스타일 적용
-        menu_style = self.get_menu_style()
-        menu.setStyleSheet(menu_style)
-        
-        # 선택된 아이템들 확인
-        selected_items = self.book_list.selectedItems()
-        selected_count = len(selected_items)
-        
-        if selected_count > 1:
-            # 다중 선택된 경우
-            menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
+            menu = QMenu()
+            # 메뉴 스타일 적용
+            menu_style = self.get_menu_style()
+            menu.setStyleSheet(menu_style)
+            
+            # 선택된 아이템들 확인
+            selected_items = self.book_list.selectedItems()
+            selected_count = len(selected_items)
+            
+            if selected_count > 1:
+                # 다중 선택된 경우
+                menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
+                menu.addSeparator()
+                
+                delete_action = menu.addAction("🗑️ 모두 삭제")
+                
+                # 메뉴 실행 및 액션 처리
+                action = menu.exec_(self.book_list.mapToGlobal(position))
+                if action == delete_action:
+                    self.delete_multiple_books(selected_items)
+                return
+            
+            # 단일 선택인 경우 기존 메뉴
+            name = item.data(Qt.UserRole)
+            is_favorite = False
+            
+            # 현재 즐겨찾기 상태 확인
+            if name in self.state.books:
+                is_favorite = self.state.books[name].get("favorite", False)
+            
+            # 즐겨찾기 액션 추가
+            if is_favorite:
+                favorite_action = menu.addAction("🖤 즐겨찾기 해제")
+            else:
+                favorite_action = menu.addAction("❤️ 즐겨찾기")
+            
+            # 구분선 추가
             menu.addSeparator()
             
-            delete_action = menu.addAction("🗑️ 모두 삭제")
+            # 기본 메뉴 항목 추가
+            rename_action = menu.addAction("📝 이름 변경")
+            delete_action = menu.addAction("🗑️ 북 삭제")
+            menu.addSeparator()
             
-            # 메뉴 실행 및 액션 처리
-            action = menu.exec_(self.book_list.mapToGlobal(position))
-            if action == delete_action:
-                self.delete_multiple_books(selected_items)
-            return
-        
-        # 단일 선택인 경우 기존 메뉴
-        name = item.data(Qt.UserRole)
-        is_favorite = False
-        
-        # 현재 즐겨찾기 상태 확인
-        if name in self.state.books:
-            is_favorite = self.state.books[name].get("favorite", False)
-        
-        # 즐겨찾기 액션 추가
-        if is_favorite:
-            favorite_action = menu.addAction("🖤 즐겨찾기 해제")
-        else:
-            favorite_action = menu.addAction("❤️ 즐겨찾기")
-        
-        # 구분선 추가
-        menu.addSeparator()
-        
-        # 기본 메뉴 항목 추가
-        rename_action = menu.addAction("📝 이름 변경")
-        delete_action = menu.addAction("🗑️ 북 삭제")
-        menu.addSeparator()
-        
-        # 이모지 변경 서브메뉴
-        emoji_menu = QMenu("🔄 이모지 변경")
-        emoji_menu.setStyleSheet("""
-            QMenu {
-                padding: 2px;
-            }
-            QMenu::item {
-                padding: 4px 16px 4px 4px;
-                margin: 0px;
-            }
-            QMenu::item:selected {
-                background-color: #505050;
-                color: white;
-            }
-            QMenu::item:hover {
-                background-color: #505050;
-                color: white;
-            }
-        """)
-        menu.addMenu(emoji_menu)
-        
-        # 이모지 옵션 그룹화
-        emoji_groups = {
-            "책": ["📕", "📘", "📙", "📗", "📓", "📔", "📒", "📚", "📖", "📝"],
-            "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
-            "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
-            "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
-            "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
-        }
-        
-        for group_name, emojis in emoji_groups.items():
-            group_menu = QMenu(group_name)
-            group_menu.setStyleSheet("""
+            # 이모지 변경 서브메뉴
+            emoji_menu = QMenu("🔄 이모지 변경")
+            emoji_menu.setStyleSheet("""
                 QMenu {
                     padding: 2px;
                 }
@@ -3095,20 +3084,50 @@ class PromptBook(QMainWindow):
                     color: white;
                 }
             """)
-            emoji_menu.addMenu(group_menu)
-            for emoji in emojis:
-                action = group_menu.addAction(emoji)
-                action.triggered.connect(lambda checked, e=emoji, i=item: self.set_book_emoji(i, e))
+            menu.addMenu(emoji_menu)
+            
+            # 이모지 옵션 그룹화
+            emoji_groups = {
+                "책": ["📕", "📘", "📙", "📗", "📓", "📔", "📒", "📚", "📖", "📝"],
+                "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
+                "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
+                "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
+                "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
+            }
+            
+            for group_name, emojis in emoji_groups.items():
+                group_menu = QMenu(group_name)
+                group_menu.setStyleSheet("""
+                    QMenu {
+                        padding: 2px;
+                    }
+                    QMenu::item {
+                        padding: 4px 16px 4px 4px;
+                        margin: 0px;
+                    }
+                    QMenu::item:selected {
+                        background-color: #505050;
+                        color: white;
+                    }
+                    QMenu::item:hover {
+                        background-color: #505050;
+                        color: white;
+                    }
+                """)
+                emoji_menu.addMenu(group_menu)
+                for emoji in emojis:
+                    action = group_menu.addAction(emoji)
+                    action.triggered.connect(lambda checked, e=emoji, i=item: self.set_book_emoji(i, e))
+            
+            # 메뉴 실행 및 액션 처리
+            action = menu.exec_(self.book_list.mapToGlobal(position))
+            if action == favorite_action:
+                self.toggle_book_favorite(item)
+            elif action == rename_action:
+                self.rename_book_dialog(item)
+            elif action == delete_action:
+                self.delete_book(item)
         
-        # 메뉴 실행 및 액션 처리
-        action = menu.exec_(self.book_list.mapToGlobal(position))
-        if action == favorite_action:
-            self.toggle_book_favorite(item)
-        elif action == rename_action:
-            self.rename_book_dialog(item)
-        elif action == delete_action:
-            self.delete_book(item)
-    
     def set_book_emoji(self, item, emoji):
         """북 이모지를 변경합니다."""
         name = item.data(Qt.UserRole)
@@ -3332,119 +3351,130 @@ class PromptBook(QMainWindow):
         if not selected_items:
             return
             
-        book_names = []
-        for item in selected_items:
-            name = item.data(Qt.UserRole)
-            if name:
-                book_names.append(name)
-        
-        if not book_names:
-            return
-            
-        # 삭제 확인 대화상자
-        count = len(book_names)
-        if count == 1:
-            message = f"'{book_names[0]}' 북을 삭제하시겠습니까?"
-        else:
-            message = f"선택된 {count}개의 북을 삭제하시겠습니까?"
-            
-        reply = QMessageBox.question(
-            self, 
-            "북 삭제 확인",
-            f"{message}\n이 작업은 되돌릴 수 없습니다.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes  # Enter 키로 삭제 확인 가능
-        )
-        
-        if reply == QMessageBox.Yes:
-            # 현재 선택된 북이 삭제 목록에 있는지 확인
-            current_book_deleted = self.current_book in book_names
-            
-            # 북들 삭제
-            for name in book_names:
-                if name in self.state.books:
-                    del self.state.books[name]
-            
-            # 리스트에서 아이템들 제거
+            book_names = []
             for item in selected_items:
-                row = self.book_list.row(item)
-                self.book_list.takeItem(row)
+                name = item.data(Qt.UserRole)
+                if name:
+                    book_names.append(name)
             
-            # 현재 선택된 북이 삭제된 경우 상태 초기화
-            if current_book_deleted:
-                self.current_book = None
-                self.state.characters = []
-                self.char_list.clear()
-                if hasattr(self, 'name_input'):
-                    self.name_input.clear()
-                if hasattr(self, 'tag_input'):
-                    self.tag_input.clear()
-                if hasattr(self, 'desc_input'):
-                    self.desc_input.clear()
-                if hasattr(self, 'prompt_input'):
-                    self.prompt_input.clear()
-                self.image_scene.clear()
+            if not book_names:
+                return
             
-            # UI 상태 업데이트
-            self.update_all_buttons_state()
-            self.save_to_file()
+            # 삭제 확인 대화상자
+            count = len(book_names)
+            if count == 1:
+                message = f"'{book_names[0]}' 북을 삭제하시겠습니까?"
+            else:
+                message = f"선택된 {count}개의 북을 삭제하시겠습니까?"
             
-            # 다른 북이 있고 현재 북이 삭제되었다면 첫 번째 북 선택
-            if current_book_deleted and self.book_list.count() > 0:
-                self.book_list.setCurrentRow(0)
-                self.on_book_selected(0)
+            reply = QMessageBox.question(
+                self, 
+                "북 삭제 확인",
+                f"{message}\n이 작업은 되돌릴 수 없습니다.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes  # Enter 키로 삭제 확인 가능
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 현재 선택된 북이 삭제 목록에 있는지 확인
+                current_book_deleted = self.current_book in book_names
+                
+                # 북들 삭제
+                for name in book_names:
+                    if name in self.state.books:
+                        del self.state.books[name]
+                
+                # 리스트에서 아이템들 제거
+                for item in selected_items:
+                    row = self.book_list.row(item)
+                    self.book_list.takeItem(row)
+                
+                # 현재 선택된 북이 삭제된 경우 상태 초기화
+                if current_book_deleted:
+                    self.current_book = None
+                    self.state.characters = []
+                    self.char_list.clear()
+                    if hasattr(self, 'name_input'):
+                        self.name_input.clear()
+                    if hasattr(self, 'tag_input'):
+                        self.tag_input.clear()
+                    if hasattr(self, 'desc_input'):
+                        self.desc_input.clear()
+                    if hasattr(self, 'prompt_input'):
+                        self.prompt_input.clear()
+                    self.image_scene.clear()
+                
+                # UI 상태 업데이트
+                self.update_all_buttons_state()
+                self.save_to_file()
+                
+                # 다른 북이 있고 현재 북이 삭제되었다면 첫 번째 북 선택
+                if current_book_deleted and self.book_list.count() > 0:
+                    self.book_list.setCurrentRow(0)
+                    self.on_book_selected(0)
     
     def delete_multiple_characters(self, selected_items):
         """선택된 여러 페이지를 삭제합니다."""
         if not selected_items:
             return
             
-        page_names = []
-        locked_pages = []
-        
-        for item in selected_items:
-            name = item.data(Qt.UserRole)
-            if name:
-                # 해당 페이지 찾기
-                for char in self.state.characters:
-                    if char.get("name") == name:
-                        if char.get('locked', False):
-                            locked_pages.append(name)
-                        else:
-                            page_names.append(name)
-                        break
-        
-        # 잠금된 페이지가 있으면 경고
-        if locked_pages:
-            locked_names = ", ".join(locked_pages)
-            if page_names:
-                reply = QMessageBox.question(
-                    self,
-                    "일부 삭제 불가",
-                    f"다음 페이지들은 잠금되어 있어 삭제할 수 없습니다:\n{locked_names}\n\n나머지 페이지들만 삭제하시겠습니까?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
-                )
-                if reply != QMessageBox.Yes:
+            page_names = []
+            locked_pages = []
+            
+            for item in selected_items:
+                name = item.data(Qt.UserRole)
+                if name:
+                    # 해당 페이지 찾기
+                    for char in self.state.characters:
+                        if char.get("name") == name:
+                            if char.get('locked', False):
+                                locked_pages.append(name)
+                            else:
+                                page_names.append(name)
+                            break
+            
+            # 잠금된 페이지가 있으면 경고
+            if locked_pages:
+                locked_names = ", ".join(locked_pages)
+                if page_names:
+                    reply = QMessageBox.question(
+                        self,
+                        "일부 삭제 불가",
+                        f"다음 페이지들은 잠금되어 있어 삭제할 수 없습니다:\n{locked_names}\n\n나머지 페이지들만 삭제하시겠습니까?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No
+                    )
+                    if reply != QMessageBox.Yes:
+                        return
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "삭제 불가",
+                        f"선택된 모든 페이지가 잠금되어 있습니다:\n{locked_names}\n\n잠금을 해제한 후 다시 시도해주세요."
+                    )
                     return
-            else:
-                QMessageBox.warning(
-                    self,
-                    "삭제 불가",
-                    f"선택된 모든 페이지가 잠금되어 있습니다:\n{locked_names}\n\n잠금을 해제한 후 다시 시도해주세요."
-                )
+            
+            if not page_names:
                 return
-        
-        if not page_names:
-            return
             
-        # 삭제 확인 대화상자
-        count = len(page_names)
-        if count == 1:
-            message = f"'{page_names[0]}' 페이지를 삭제하시겠습니까?"
-        else:
-            message = f"선택된 {count}개의 페이지를 삭제하시겠습니까?"
+            # 삭제 확인 대화상자
+            count = len(page_names)
+            if count == 1:
+                message = f"'{page_names[0]}' 페이지를 삭제하시겠습니까?"
+            else:
+                message = f"선택된 {count}개의 페이지를 삭제하시겠습니까?"
             
+            reply = QMessageBox.question(
+                self, 
+                "페이지 삭제 확인",
+                f"{message}\n이 작업은 되돌릴 수 없습니다.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes  # Enter 키로 삭제 확인 가능
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 페이지들 삭제 (역순으로 삭제하여 인덱스 문제 방지)
+                pages_to_delete = []
         reply = QMessageBox.question(
             self, 
             "페이지 삭제 확인",
@@ -3789,194 +3819,202 @@ class PromptBook(QMainWindow):
         theme = self.THEMES[theme_name]
         
         # 커스텀 테마가 아닌 경우 배경 이미지 초기화
+        # 스타일시트 초기화
+        style = ""
         if theme_name != "커스텀 테마":
             self.custom_background_image = None
         
-        # 전체 애플리케이션 스타일시트 적용
-        style = f"""
-        QMainWindow {{
-            background-color: {theme['background']};
-            color: {theme['text']};
-            border: 2px solid {theme['border']};
-            border-radius: 12px;
-        }}
-        
-        QWidget {{
-            background-color: {theme['background']};
-            color: {theme['text']};
-        }}
-        
-        QLabel {{
-            color: {theme['text']};
-            background-color: transparent;
-        }}
-        
-        QLineEdit, CustomLineEdit {{
-            background-color: {theme['surface']};
-            border: 1px solid {theme['border']};
-            color: {theme['text']};
-            padding: 4px;
-            border-radius: 3px;
-        }}
-        
-        QLineEdit:focus, CustomLineEdit:focus {{
-            border: 2px solid {theme['primary']};
-        }}
-        
-        QTextEdit {{
-            background-color: {theme['surface']};
-            border: 1px solid {theme['border']};
-            color: {theme['text']};
-            padding: 4px;
-            border-radius: 3px;
-        }}
-        
-        QTextEdit:focus {{
-            border: 2px solid {theme['primary']};
-        }}
-        
-        QPushButton {{
-            background-color: {theme['button']};
-            border: 1px solid {theme['border']};
-            color: {theme['text']};
-            padding: 6px 12px;
-            border-radius: 3px;
-            font-weight: bold;
-        }}
-        
-        QPushButton:hover {{
-            background-color: {theme['button_hover']};
-        }}
-        
-        QPushButton:pressed {{
-            background-color: {theme['primary']};
-        }}
-        
-        QPushButton:disabled {{
-            background-color: {theme['surface']};
-            color: {theme['text_secondary']};
-        }}
-        
-        QListWidget {{
-            background-color: {theme['surface']};
-            border: 1px solid {theme['border']};
-            color: {theme['text']};
-            outline: none;
-            border-radius: 3px;
-        }}
-        
-        QListWidget::item {{
-            background-color: transparent;
-            border: none;
-            padding: 2px;
-        }}
-        
-        QListWidget::item:selected {{
-            background-color: {theme['selected']};
-            color: white;
-        }}"""
-        
-        # 네온 테마용 특별 효과
-        if theme_name in ["블루 네온", "핑크 네온"]:
-            # 네온 윈도우 테두리
-            style = style.replace(
-                f"border: 2px solid {theme['border']};",
-                f"border: 3px solid {theme['primary']};"
-            )
-            
-            # 네온 타이틀 바 스타일
-            title_bar_style = f"""
-            QWidget#titleBar {{
+            # 전체 애플리케이션 스타일시트 적용
+            style = f"""
+            QMainWindow {{
                 background-color: {theme['background']};
-                border-bottom: 3px solid {theme['primary']};
-                border-top-left-radius: 10px;
-                border-top-right-radius: 10px;
+                color: {theme['text']};
+                border: 2px solid {theme['border']};
+                border-radius: 12px;
             }}
             
-            QLabel#titleLabel {{
-                color: {theme['primary']};
+            QWidget {{
+                background-color: {theme['background']};
+                color: {theme['text']};
+            }}
+            
+            QLabel {{
+                color: {theme['text']};
                 background-color: transparent;
-                font-weight: bold;
-                font-size: 14px;
             }}
-            """
             
-            style += title_bar_style
-            style += f"""
-        QPushButton {{
-            background-color: {theme['button']};
-            border: 3px solid {theme['primary']};
-            color: {theme['text']};
-            padding: 6px 12px;
-            border-radius: 5px;
-            font-weight: bold;
-        }}
-        
-        QPushButton:hover {{
-            background-color: {theme['button_hover']};
-            border: 3px solid {theme['primary']};
-            color: {theme['primary']};
-        }}
-        
-        QPushButton:pressed {{
-            background-color: {theme['primary']};
-            color: black;
-            border: 3px solid {theme['primary']};
-        }}
-        
-        QListWidget::item:selected {{
-            background-color: {theme['selected']};
-            color: black;
-            border: 2px solid {theme['primary']};
-            font-weight: bold;
-        }}
-        
-        QLineEdit, QTextEdit, CustomLineEdit {{
-            background-color: {theme['button']};
-            border: 2px solid {theme['border']};
-            color: {theme['text']};
-            padding: 4px;
-            border-radius: 3px;
-        }}
-        
-        QLineEdit:focus, QTextEdit:focus, CustomLineEdit:focus {{
-            border: 3px solid {theme['primary']};
-            background-color: {theme['button']};
-        }}
-        
-        QPushButton:disabled {{
-            background-color: {theme['background']};
-            border: 1px solid #333333;
-            color: #555555;
-            font-weight: normal;
-        }}
-        
-        QSplitter::handle:horizontal {{
-            width: 10px;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {theme['background']}, 
-                stop:0.5 {theme['primary']}, 
-                stop:1 {theme['background']});
-            border: 2px solid {theme['primary']};
-        }}
-        
-        QSplitter::handle:horizontal:hover {{
-            background: {theme['primary']};
-            border: 2px solid {theme['primary']};
-        }}
-        
-        QSplitter::handle:vertical {{
-            height: 10px;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {theme['background']}, 
-                stop:0.5 {theme['primary']}, 
-                stop:1 {theme['background']});
-            border: 2px solid {theme['primary']};
-        }}
-        
-        QSplitter::handle:vertical:hover {{
-            background: {theme['primary']};
-            border: 2px solid {theme['primary']};
+            QLineEdit, CustomLineEdit {{
+                background-color: {theme['surface']};
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 4px;
+                border-radius: 3px;
+            }}
+            
+            QLineEdit:focus, CustomLineEdit:focus {{
+                border: 2px solid {theme['primary']};
+            }}
+            
+            QTextEdit {{
+                background-color: {theme['surface']};
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 4px;
+                border-radius: 3px;
+            }}
+            
+            QTextEdit:focus {{
+                border: 2px solid {theme['primary']};
+            }}
+            
+            QPushButton {{
+                background-color: {theme['button']};
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 6px 12px;
+                border-radius: 3px;
+                font-weight: bold;
+            }}
+            
+            QPushButton:hover {{
+                background-color: {theme['button_hover']};
+            }}
+            
+            QPushButton:pressed {{
+                background-color: {theme['primary']};
+            }}
+            
+            QPushButton:disabled {{
+                background-color: {theme['surface']};
+                color: {theme['text_secondary']};
+            }}
+            
+            QListWidget {{
+                background-color: {theme['surface']};
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                outline: none;
+                border-radius: 3px;
+            }}
+            
+            QListWidget::item {{
+                background-color: transparent;
+                border: none;
+                padding: 2px;
+            }}
+            
+            QListWidget::item:selected {{
+                background-color: {theme['selected']};
+                color: white;
+            }}
+            
+            QGraphicsView {{
+                background-color: {theme['surface']};
+                border: 1px solid {theme['border']};
+                border-radius: 3px;
+            }}"""
+            
+            # 네온 테마용 특별 효과
+            if theme_name in ["블루 네온", "핑크 네온"]:
+                # 네온 윈도우 테두리
+                style = style.replace(
+                    f"border: 2px solid {theme['border']};",
+                    f"border: 3px solid {theme['primary']};"
+                )
+                
+                # 네온 타이틀 바 스타일
+                title_bar_style = f"""
+                QWidget#titleBar {{
+                    background-color: {theme['background']};
+                    border-bottom: 3px solid {theme['primary']};
+                    border-top-left-radius: 10px;
+                    border-top-right-radius: 10px;
+                }}
+                
+                QLabel#titleLabel {{
+                    color: {theme['primary']};
+                    background-color: transparent;
+                    font-weight: bold;
+                    font-size: 14px;
+                }}
+                """
+                
+                style += title_bar_style
+                style += f"""
+            QPushButton {{
+                background-color: {theme['button']};
+                border: 3px solid {theme['primary']};
+                color: {theme['text']};
+                padding: 6px 12px;
+                border-radius: 5px;
+                font-weight: bold;
+            }}
+            
+            QPushButton:hover {{
+                background-color: {theme['button_hover']};
+                border: 3px solid {theme['primary']};
+                color: {theme['primary']};
+            }}
+            
+            QPushButton:pressed {{
+                background-color: {theme['primary']};
+                color: black;
+                border: 3px solid {theme['primary']};
+            }}
+            
+            QListWidget::item:selected {{
+                background-color: {theme['selected']};
+                color: black;
+                border: 2px solid {theme['primary']};
+                font-weight: bold;
+            }}
+            
+            QLineEdit, QTextEdit, CustomLineEdit {{
+                background-color: {theme['button']};
+                border: 2px solid {theme['border']};
+                color: {theme['text']};
+                padding: 4px;
+                border-radius: 3px;
+            }}
+            
+            QLineEdit:focus, QTextEdit:focus, CustomLineEdit:focus {{
+                border: 3px solid {theme['primary']};
+                background-color: {theme['button']};
+            }}
+            
+            QPushButton:disabled {{
+                background-color: {theme['background']};
+                border: 1px solid #333333;
+                color: #555555;
+                font-weight: normal;
+            }}
+            
+            QSplitter::handle:horizontal {{
+                width: 10px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {theme['background']}, 
+                    stop:0.5 {theme['primary']}, 
+                    stop:1 {theme['background']});
+                border: 2px solid {theme['primary']};
+            }}
+            
+            QSplitter::handle:horizontal:hover {{
+                background: {theme['primary']};
+                border: 2px solid {theme['primary']};
+            }}
+            
+            QSplitter::handle:vertical {{
+                height: 10px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {theme['background']}, 
+                    stop:0.5 {theme['primary']}, 
+                    stop:1 {theme['background']});
+                border: 2px solid {theme['primary']};
+            }}
+            
+            QSplitter::handle:vertical:hover {{
+                background: {theme['primary']};
+                border: 2px solid {theme['primary']};
         }}"""
         
         style += """
@@ -4205,6 +4243,11 @@ class PromptBook(QMainWindow):
                 stop:1 {theme['hover']});
         }}
         
+        """
+        
+        # 커스텀 테마가 아닐 때만 QGraphicsView 스타일 추가
+        if theme_name != "커스텀 테마":
+            style += f"""
         QGraphicsView {{
             background-color: {theme['surface']};
             border: 1px solid {theme['border']};
@@ -4232,7 +4275,7 @@ class PromptBook(QMainWindow):
         style += title_bar_style
         
         self.setStyleSheet(style)
-        
+            
         # 커스텀 테마인 경우 배경 이미지 적용
         if theme_name == "커스텀 테마" and self.custom_background_image:
             self.apply_background_image(self.custom_background_image)
@@ -4341,17 +4384,8 @@ class PromptBook(QMainWindow):
                     """
                 self.menu_btn.setStyleSheet(menu_button_style)
         
-        # 이미지 뷰포트 배경색 직접 설정
+        # 드롭 힌트 스타일 업데이트만 유지
         if hasattr(self, 'image_view'):
-            # QGraphicsView 배경 브러시 설정
-            background_color = QColor(theme['surface'])
-            self.image_view.setBackgroundBrush(QBrush(background_color))
-            
-            # 씬 배경색도 설정
-            if hasattr(self, 'image_scene'):
-                self.image_scene.setBackgroundBrush(QBrush(background_color))
-            
-            # 드롭 힌트 스타일 업데이트
             self.image_view.update_drop_hint_style(theme)
         
         # 테마 액션 상태 업데이트 (theme_group이 있는 경우에만)
@@ -4362,11 +4396,23 @@ class PromptBook(QMainWindow):
         # 타이틀바 스타일 업데이트
         self.update_title_bar_style()
         
+        # 커스텀 테마인 경우 배경 이미지와 투명도 적용 (스타일시트 적용 후에)
+        if theme_name == "커스텀 테마":
+            if hasattr(self, 'custom_background_image') and self.custom_background_image:
+                self.apply_background_image(self.custom_background_image)
+            else:
+                # 배경 이미지가 없어도 투명도는 적용
+                self.apply_custom_theme_transparency_new()
+        
+        # 스플리터 핸들 너비 업데이트
+        if hasattr(self, 'main_splitter'):
+            self.main_splitter.update_handle_width(theme_name)
+        
         # UI 설정에 테마 저장
         self.save_ui_settings()
         
         print(f"[DEBUG] 테마 적용됨: {theme_name}")
-
+    
     def apply_custom_theme(self):
         """커스텀 테마 적용 - 이미지 파일 선택"""
         file_dialog = QFileDialog()
@@ -4378,15 +4424,55 @@ class PromptBook(QMainWindow):
         )
         
         if file_path:
-            self.custom_background_image = file_path
-            self.apply_theme("커스텀 테마")
+            # 강제 재시작 확인 다이얼로그
+            from PySide6.QtWidgets import QMessageBox
+            
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("프로그램 재시작 필요")
+            msg_box.setText("커스텀 테마를 올바르게 적용하려면 프로그램을 재시작해야 합니다.")
+            msg_box.setInformativeText("지금 재시작하시겠습니까?\n\n재시작하지 않으면 테마 적용이 취소됩니다.")
+            msg_box.setIcon(QMessageBox.Question)
+            
+            restart_btn = msg_box.addButton("재시작", QMessageBox.AcceptRole)
+            cancel_btn = msg_box.addButton("취소", QMessageBox.RejectRole)
+            
+            msg_box.exec()
+            
+            if msg_box.clickedButton() == restart_btn:
+                # 커스텀 테마 설정 저장
+                self.custom_background_image = file_path
+                
+                # UI 설정에 커스텀 테마 저장
+                self.current_theme = "커스텀 테마"
+                self.save_ui_settings()
+                
+                # 프로그램 재시작
+                import sys
+                import os
+                
+                # 현재 스크립트 경로
+                script_path = os.path.abspath(sys.argv[0])
+                
+                # 새 프로세스로 프로그램 시작
+                import subprocess
+                subprocess.Popen([sys.executable, script_path])
+                
+                # 현재 프로그램 종료
+                self.close()
+                
+            else:
+                # 취소한 경우 이전 테마로 되돌리기
+                for action in self.theme_group.actions():
+                    if action.text().endswith(self.current_theme):
+                        action.setChecked(True)
+                        break
         else:
             # 이미지 선택을 취소한 경우 이전 테마로 되돌리기
             for action in self.theme_group.actions():
                 if action.text().endswith(self.current_theme):
                     action.setChecked(True)
                     break
-
+            
     def apply_background_image(self, image_path):
         """배경 이미지를 적용합니다."""
         try:
@@ -4417,7 +4503,7 @@ class PromptBook(QMainWindow):
                 print(f"[DEBUG] 중앙 위젯을 투명하게 설정")
             
             # 커스텀 테마용 반투명 스타일 적용
-            self.apply_custom_theme_transparency()
+            self.apply_custom_theme_transparency_new()
             
             # 윈도우 다시 그리기 (paintEvent가 호출됨)
             self.update()
@@ -4484,77 +4570,464 @@ class PromptBook(QMainWindow):
         # 부모 클래스의 paintEvent 호출
         super().paintEvent(event)
 
-    def apply_custom_theme_transparency(self):
-        """커스텀 테마용 투명도 스타일 적용"""
+
+
+
+
+
+
+
+
+
+
+    def adjust_window_opacity(self):
+        """윈도우 투명도 조절 다이얼로그"""
         try:
+            from PySide6.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog
+            
+            dialog = QDialog(self)
+            dialog.setWindowTitle("윈도우 투명도 조절")
+            dialog.setFixedSize(300, 150)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # 현재 투명도 표시
+            current_opacity = self.windowOpacity()
+            opacity_label = QLabel(f"현재 투명도: {int(current_opacity * 100)}%")
+            layout.addWidget(opacity_label)
+            
+            # 투명도 슬라이더
+            opacity_slider = QSlider(Qt.Horizontal)
+            opacity_slider.setMinimum(10)  # 최소 10%
+            opacity_slider.setMaximum(100)  # 최대 100%
+            opacity_slider.setValue(int(current_opacity * 100))
+            
+            def on_opacity_changed(value):
+                self.setWindowOpacity(value / 100.0)
+                opacity_label.setText(f"현재 투명도: {value}%")
+            
+            opacity_slider.valueChanged.connect(on_opacity_changed)
+            layout.addWidget(opacity_slider)
+            
+            # 버튼들
+            button_layout = QHBoxLayout()
+            
+            reset_button = QPushButton("기본값 (100%)")
+            reset_button.clicked.connect(lambda: opacity_slider.setValue(100))
+            button_layout.addWidget(reset_button)
+            
+            transparent_button = QPushButton("반투명 (70%)")
+            transparent_button.clicked.connect(lambda: opacity_slider.setValue(70))
+            button_layout.addWidget(transparent_button)
+            
+            close_button = QPushButton("닫기")
+            close_button.clicked.connect(dialog.accept)
+            button_layout.addWidget(close_button)
+            
+            layout.addLayout(button_layout)
+            
+            dialog.exec()
+            
+        except Exception as e:
+            print(f"[ERROR] 윈도우 투명도 조절 실패: {e}")
+            QMessageBox.critical(self, "오류", f"윈도우 투명도 조절 실패: {e}")
+
+    def adjust_custom_theme_transparency(self):
+        """커스텀 테마 투명도 조절 다이얼로그"""
+        try:
+            from PySide6.QtWidgets import QSlider, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog
+            
+            dialog = QDialog(self)
+            dialog.setWindowTitle("커스텀 테마 투명도 조절")
+            dialog.setFixedSize(350, 200)
+            
+            # 현재 테마 적용
+            current_theme = getattr(self, 'current_theme', '어두운 모드')
+            theme = self.THEMES.get(current_theme, self.THEMES['어두운 모드'])
+            
+            dialog.setStyleSheet(f"""
+                QDialog {{
+                    background-color: {theme['background']};
+                    color: {theme['text']};
+                    border: 2px solid {theme['border']};
+                    border-radius: 10px;
+                }}
+                QLabel {{
+                    color: {theme['text']};
+                    background-color: transparent;
+                }}
+                QPushButton {{
+                    background-color: {theme['button']};
+                    border: 1px solid {theme['border']};
+                    color: {theme['text']};
+                    padding: 8px 16px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: {theme['button_hover']};
+                }}
+                QSlider::groove:horizontal {{
+                    border: 1px solid {theme['border']};
+                    height: 8px;
+                    background: {theme['surface']};
+                    border-radius: 4px;
+                }}
+                QSlider::handle:horizontal {{
+                    background: {theme['primary']};
+                    border: 1px solid {theme['border']};
+                    width: 18px;
+                    margin: -5px 0;
+                    border-radius: 9px;
+                }}
+            """)
+            
+            layout = QVBoxLayout(dialog)
+            layout.setSpacing(15)
+            layout.setContentsMargins(20, 20, 20, 20)
+            
+            # 설명 라벨
+            desc_label = QLabel("커스텀 테마의 UI 요소 투명도를 조절합니다")
+            desc_label.setAlignment(Qt.AlignCenter)
+            desc_label.setStyleSheet("font-size: 12px; margin-bottom: 10px;")
+            layout.addWidget(desc_label)
+            
+            # 현재 투명도 표시
+            current_transparency = self.custom_transparency_level
+            transparency_label = QLabel(f"현재 투명도: {int(current_transparency * 100)}%")
+            transparency_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(transparency_label)
+            
+            # 투명도 슬라이더
+            transparency_slider = QSlider(Qt.Horizontal)
+            transparency_slider.setMinimum(5)   # 최소 5% (완전 투명하면 안 보임)
+            transparency_slider.setMaximum(95)  # 최대 95% (완전 불투명하면 배경 이미지가 안 보임)
+            transparency_slider.setValue(int(current_transparency * 100))
+            
+            def on_transparency_changed(value):
+                self.custom_transparency_level = value / 100.0
+                transparency_label.setText(f"현재 투명도: {value}%")
+                # 실시간으로 투명도 적용
+                if self.current_theme == "커스텀 테마":
+                    self.apply_custom_theme_transparency_new()
+            
+            transparency_slider.valueChanged.connect(on_transparency_changed)
+            layout.addWidget(transparency_slider)
+            
+            # 프리셋 버튼들
+            preset_layout = QHBoxLayout()
+            
+            low_button = QPushButton("낮음 (20%)")
+            low_button.clicked.connect(lambda: transparency_slider.setValue(20))
+            preset_layout.addWidget(low_button)
+            
+            medium_button = QPushButton("중간 (50%)")
+            medium_button.clicked.connect(lambda: transparency_slider.setValue(50))
+            preset_layout.addWidget(medium_button)
+            
+            high_button = QPushButton("높음 (80%)")
+            high_button.clicked.connect(lambda: transparency_slider.setValue(80))
+            preset_layout.addWidget(high_button)
+            
+            layout.addLayout(preset_layout)
+            
+            # 버튼들
+            button_layout = QHBoxLayout()
+            
+            reset_button = QPushButton("기본값 (50%)")
+            reset_button.clicked.connect(lambda: transparency_slider.setValue(50))
+            button_layout.addWidget(reset_button)
+            
+            close_button = QPushButton("닫기")
+            close_button.clicked.connect(dialog.accept)
+            button_layout.addWidget(close_button)
+            
+            layout.addLayout(button_layout)
+            
+            dialog.exec()
+            
+            # 설정 저장
+            self.save_ui_settings()
+            
+        except Exception as e:
+            print(f"[ERROR] 커스텀 테마 투명도 조절 실패: {e}")
+            QMessageBox.critical(self, "오류", f"커스텀 테마 투명도 조절 실패: {e}")
+
+    def reset_viewport_transparency(self):
+        """뷰포트 투명도만 초기화 (배경 이미지는 유지)"""
+        try:
+            print("[DEBUG] 뷰포트 투명도 초기화 시작")
+            
+            # 이미지 뷰 관련 초기화만 수행
+            if hasattr(self, 'image_view'):
+                # 뷰포트 스타일 완전 제거
+                self.image_view.setStyleSheet("")
+                self.image_view.viewport().setStyleSheet("")
+                
+                # 씬 배경 초기화
+                if hasattr(self.image_view, 'scene') and self.image_view.scene():
+                    # 씬 배경을 완전 투명으로 설정
+                    self.image_view.scene().setBackgroundBrush(QBrush(QColor(0, 0, 0, 0)))
+                
+                # 뷰포트 속성 초기화
+                self.image_view.viewport().setAttribute(Qt.WA_TranslucentBackground, False)
+                self.image_view.setAttribute(Qt.WA_TranslucentBackground, False)
+                
+                # 강제로 이미지 뷰 업데이트
+                self.image_view.update()
+                self.image_view.viewport().update()
+                
+                print("[DEBUG] 이미지 뷰 투명도 초기화 완료")
+            
+            print("[DEBUG] 뷰포트 투명도 초기화 완료")
+            
+        except Exception as e:
+            print(f"[ERROR] 뷰포트 투명도 초기화 실패: {e}")
+
+    def apply_custom_theme_transparency_new(self):
+        """커스텀 테마용 부분별 투명도 스타일 적용 - 위젯별 직접 적용"""
+        try:
+            # 먼저 뷰포트 투명도를 완전히 초기화
+            self.reset_viewport_transparency()
+            
             # 현재 테마 색상 가져오기
             theme = self.THEMES.get(self.current_theme, self.THEMES['어두운 모드'])
             
-            # 반투명 스타일 정의
-            transparency_style = f"""
-            /* 중요한 UI 요소들 - 적당히 불투명 (80% 불투명도) */
-            QListWidget {{
-                background-color: rgba({self.hex_to_rgba(theme['surface'])}, 0.8);
-                border: 1px solid {theme['border']};
-                color: {theme['text']};
-                outline: none;
-                border-radius: 3px;
-            }}
+            # 사용자 설정 투명도 레벨 사용
+            transparency = self.custom_transparency_level
             
-            QLineEdit, CustomLineEdit, QTextEdit {{
-                background-color: rgba({self.hex_to_rgba(theme['surface'])}, 0.85);
+            print(f"[DEBUG] 위젯별 투명도 직접 적용 시작 - 투명도 레벨: {transparency}")
+            
+            # 검색창들 - 사용자 설정 투명도 + 5% 추가 (더 잘 보이도록)
+            search_transparency = min(transparency + 0.05, 0.95)
+            search_style = f"""
+                background-color: rgba({self.hex_to_rgba(theme['surface'])}, {search_transparency});
                 border: 1px solid {theme['border']};
                 color: {theme['text']};
                 padding: 4px;
                 border-radius: 3px;
-            }}
+            """
             
-            QPushButton {{
-                background-color: rgba({self.hex_to_rgba(theme['button'])}, 0.8);
+            # 북 검색창
+            if hasattr(self, 'book_search_input'):
+                self.book_search_input.setStyleSheet(search_style)
+                print("[DEBUG] 북 검색창 투명도 적용")
+            
+            # 페이지 검색창
+            if hasattr(self, 'search_input'):
+                self.search_input.setStyleSheet(search_style)
+                print("[DEBUG] 페이지 검색창 투명도 적용")
+            
+            # 이름 입력란
+            if hasattr(self, 'name_input'):
+                self.name_input.setStyleSheet(search_style)
+                print("[DEBUG] 이름 입력란 투명도 적용")
+            
+            # 태그 입력란
+            if hasattr(self, 'tag_input'):
+                self.tag_input.setStyleSheet(search_style)
+                print("[DEBUG] 태그 입력란 투명도 적용")
+            
+            # 북 리스트 - 사용자 설정 투명도
+            list_style = f"""
+                QListWidget {{
+                    background-color: rgba({self.hex_to_rgba(theme['surface'])}, {transparency});
+                    border: 1px solid {theme['border']};
+                    color: {theme['text']};
+                    outline: none;
+                    border-radius: 3px;
+                }}
+                QListWidget::item {{
+                    background-color: transparent;
+                    border: none;
+                    padding: 2px;
+                }}
+                QListWidget::item:selected {{
+                    background-color: rgba({self.hex_to_rgba(theme['selected'])}, {transparency});
+                    color: white;
+                }}
+                QListWidget::item:hover {{
+                    background-color: rgba({self.hex_to_rgba(theme['hover'])}, {transparency});
+                }}
+            """
+            
+            if hasattr(self, 'book_list'):
+                self.book_list.setStyleSheet(list_style)
+                print("[DEBUG] 북 리스트 투명도 적용")
+            
+            if hasattr(self, 'char_list'):
+                self.char_list.setStyleSheet(list_style)
+                print("[DEBUG] 페이지 리스트 투명도 적용")
+            
+            # 텍스트 입력 - 사용자 설정 투명도 - 5% (약간 더 투명하게)
+            text_transparency = max(transparency - 0.05, 0.05)
+            text_style = f"""
+                background-color: rgba({self.hex_to_rgba(theme['surface'])}, {text_transparency});
+                border: 1px solid {theme['border']};
+                color: {theme['text']};
+                padding: 4px;
+                border-radius: 3px;
+            """
+            
+            if hasattr(self, 'prompt_input'):
+                print(f"[DEBUG] prompt_input 타입: {type(self.prompt_input)}")
+                self.prompt_input.setStyleSheet(text_style)
+                print("[DEBUG] 설명 입력란 투명도 적용")
+            else:
+                print("[DEBUG] prompt_input 속성이 없음")
+            
+            # 모든 QTextEdit 찾아서 적용
+            text_edits = self.findChildren(QTextEdit)
+            for text_edit in text_edits:
+                text_edit.setStyleSheet(text_style)
+            print(f"[DEBUG] {len(text_edits)} 개 QTextEdit 투명도 적용")
+            
+            # CustomLineEdit도 찾아서 적용
+            custom_line_edits = self.findChildren(CustomLineEdit)
+            for custom_edit in custom_line_edits:
+                custom_edit.setStyleSheet(text_style)
+            print(f"[DEBUG] {len(custom_line_edits)} 개 CustomLineEdit 투명도 적용")
+            
+            # QPlainTextEdit도 찾아서 적용
+            plain_text_edits = self.findChildren(QPlainTextEdit)
+            for plain_edit in plain_text_edits:
+                plain_edit.setStyleSheet(text_style)
+            print(f"[DEBUG] {len(plain_text_edits)} 개 QPlainTextEdit 투명도 적용")
+            
+            # 버튼들 - 사용자 설정 투명도 - 10% (더 투명하게)
+            button_transparency = max(transparency - 0.10, 0.05)
+            button_style = f"""
+                background-color: rgba({self.hex_to_rgba(theme['button'])}, {button_transparency});
                 border: 1px solid {theme['border']};
                 color: {theme['text']};
                 padding: 6px 12px;
                 border-radius: 3px;
                 font-weight: bold;
-            }}
+            """
             
-            QPushButton:hover {{
-                background-color: rgba({self.hex_to_rgba(theme['button_hover'])}, 0.9);
-            }}
+            # 모든 QPushButton 찾아서 적용
+            buttons = self.findChildren(QPushButton)
+            for button in buttons:
+                # 타이틀바 버튼들은 제외
+                if button not in [getattr(self, 'menu_btn', None), 
+                                getattr(self, 'donate_btn', None),
+                                getattr(self, 'minimize_btn', None), 
+                                getattr(self, 'maximize_btn', None), 
+                                getattr(self, 'close_btn', None)]:
+                    button.setStyleSheet(button_style)
+            print(f"[DEBUG] {len(buttons)} 개 버튼 투명도 적용")
             
-            QComboBox {{
-                background-color: rgba({self.hex_to_rgba(theme['button'])}, 0.8);
+            # 드롭다운 메뉴 - 사용자 설정 투명도
+            combo_style = f"""
+                background-color: rgba({self.hex_to_rgba(theme['button'])}, {transparency});
                 border: 1px solid {theme['border']};
                 color: {theme['text']};
                 padding: 4px 8px;
                 border-radius: 3px;
-            }}
-            
-            /* 이미지 뷰포트 - 투명하게 (30% 불투명도) */
-            QGraphicsView {{
-                background-color: rgba({self.hex_to_rgba(theme['surface'])}, 0.3);
-                border: 1px solid {theme['border']};
-                border-radius: 3px;
-            }}
-            
-            /* 메인 위젯들 - 매우 투명 */
-            QWidget {{
-                background-color: rgba({self.hex_to_rgba(theme['background'])}, 0.1);
-                color: {theme['text']};
-            }}
-            
-            /* 라벨은 완전 투명 */
-            QLabel {{
-                background-color: transparent;
-                color: {theme['text']};
-            }}
             """
             
-            # 기존 스타일에 추가
-            current_style = self.styleSheet()
-            self.setStyleSheet(current_style + transparency_style)
+            # 모든 QComboBox 찾아서 적용
+            combos = self.findChildren(QComboBox)
+            for combo in combos:
+                combo.setStyleSheet(combo_style)
+            print(f"[DEBUG] {len(combos)} 개 드롭다운 투명도 적용")
             
-            print("[DEBUG] 커스텀 테마 투명도 적용됨")
+            # 이미지 뷰포트 - 초기화 후 새로운 투명도 적용
+            image_transparency = transparency  # 사용자 설정 그대로
+            image_style = f"""
+                QGraphicsView {{
+                    background-color: rgba({self.hex_to_rgba(theme['surface'])}, {image_transparency});
+                    border: 1px solid {theme['border']};
+                    border-radius: 3px;
+                }}
+            """
+            
+            if hasattr(self, 'image_view'):
+                # 이미지 뷰에 새로운 스타일 적용
+                self.image_view.setStyleSheet(image_style)
+                
+                # 뷰포트는 완전 투명하게 유지 (중첩 방지)
+                self.image_view.viewport().setStyleSheet("background-color: transparent;")
+                
+                # 씬도 완전 투명하게 유지 (중첩 방지)
+                if hasattr(self.image_view, 'scene') and self.image_view.scene():
+                    self.image_view.scene().setBackgroundBrush(QBrush(QColor(0, 0, 0, 0)))  # 완전 투명
+                
+                print(f"[DEBUG] 이미지 뷰포트 투명도 재적용 ({int(image_transparency*100)}% 불투명, 뷰포트/씬은 투명)")
+            
+            # 스플리터 핸들 - 사용자 설정의 30% 수준
+            splitter_style = f"""
+                QSplitter::handle {{
+                    background: transparent;
+                    border: none;
+                    width: 0px;
+                    height: 0px;
+                }}
+                QSplitter::handle:horizontal {{
+                    background: transparent;
+                    border: none;
+                    width: 0px;
+                }}
+                QSplitter::handle:vertical {{
+                    background: transparent;
+                    border: none;
+                    height: 0px;
+                }}
+                QSplitter::handle:hover {{
+                    background: transparent;
+                    border: none;
+                }}
+            """
+            
+            # 모든 QSplitter 찾아서 적용
+            splitters = self.findChildren(QSplitter)
+            for splitter in splitters:
+                if self.current_theme == "커스텀 테마":
+                    # 커스텀 테마: 스플리터 완전히 숨기되 기능은 유지
+                    invisible_splitter_style = f"""
+                        QSplitter::handle {{
+                            background: transparent;
+                            border: none;
+                            width: 0px;
+                            height: 0px;
+                            margin: 0px;
+                            padding: 0px;
+                        }}
+                        QSplitter::handle:horizontal {{
+                            background: transparent;
+                            border: none;
+                            width: 0px;
+                            margin: 0px;
+                            padding: 0px;
+                        }}
+                        QSplitter::handle:vertical {{
+                            background: transparent;
+                            border: none;
+                            height: 0px;
+                            margin: 0px;
+                            padding: 0px;
+                        }}
+                        QSplitter::handle:hover {{
+                            background: transparent;
+                            border: none;
+                        }}
+                    """
+                    splitter.setStyleSheet(invisible_splitter_style)
+                    if hasattr(splitter, 'setHandleWidth'):
+                        splitter.setHandleWidth(0)  # 완전히 0으로 설정
+                else:
+                    # 다른 테마: 원래 스타일 적용
+                    splitter.setStyleSheet(splitter_style)
+                    if hasattr(splitter, 'setHandleWidth'):
+                        splitter.setHandleWidth(10)
+            
+            if self.current_theme == "커스텀 테마":
+                print(f"[DEBUG] {len(splitters)} 개 스플리터 완전히 숨김 (기능 유지)")
+            else:
+                print(f"[DEBUG] {len(splitters)} 개 스플리터 투명도 적용")
+            print(f"[DEBUG] {len(splitters)} 개 스플리터 완전히 비활성화")
+            
+            print(f"[DEBUG] 부분별 투명도 적용 완료 - 기본:{int(transparency*100)}%, 검색창:{int(search_transparency*100)}%, 텍스트:{int(text_transparency*100)}%, 버튼:{int(button_transparency*100)}%, 이미지뷰:{int(image_transparency*100)}%")
             
         except Exception as e:
             print(f"[ERROR] 투명도 적용 실패: {e}")
@@ -4562,6 +5035,25 @@ class PromptBook(QMainWindow):
     def remove_custom_theme_transparency(self):
         """커스텀 테마 투명도 스타일 제거"""
         try:
+            # 중앙 위젯 투명도 제거
+            central_widget = self.centralWidget()
+            if central_widget:
+                central_widget.setAttribute(Qt.WA_TranslucentBackground, False)
+                central_widget.setStyleSheet("")
+            
+            # 이미지 뷰 배경 복원
+            if hasattr(self, 'image_view') and hasattr(self, 'current_theme'):
+                theme = self.THEMES.get(self.current_theme, self.THEMES['어두운 모드'])
+                # 이미지 뷰에 테마 색상 적용
+                background_color = QColor(theme['surface'])
+                self.image_view.setBackgroundBrush(QBrush(background_color))
+                self.image_view.setStyleSheet("")
+                self.image_view.viewport().setStyleSheet("")
+                
+                # 씬 배경색도 복원
+                if hasattr(self.image_view, 'scene') and self.image_view.scene():
+                    self.image_view.scene().setBackgroundBrush(QBrush(background_color))
+            
             # 현재 테마 다시 적용하여 투명도 제거
             if hasattr(self, 'current_theme'):
                 self.apply_theme(self.current_theme)
@@ -4839,8 +5331,8 @@ class PromptBook(QMainWindow):
                 theme_action.triggered.connect(lambda checked, name=theme_name: self.apply_theme(name))
             self.theme_group.addAction(theme_action)
             
-            # 현재 테마 설정
-            if theme_name == self.current_theme:
+            # 현재 테마 설정 (current_theme이 초기화된 경우에만)
+            if hasattr(self, 'current_theme') and theme_name == self.current_theme:
                 theme_action.setChecked(True)
 
     def setup_custom_title_bar(self, main_layout):
@@ -5029,8 +5521,8 @@ class PromptBook(QMainWindow):
         # 미리 생성된 테마 액션들을 메뉴에 추가
         for action in self.theme_group.actions():
             theme_menu.addAction(action)
-            # 현재 테마 체크 상태 업데이트
-            if action.text() == self.current_theme:
+            # 현재 테마 체크 상태 업데이트 (current_theme이 초기화된 경우에만)
+            if hasattr(self, 'current_theme') and action.text() == self.current_theme:
                 action.setChecked(True)
             else:
                 action.setChecked(False)
@@ -5042,6 +5534,25 @@ class PromptBook(QMainWindow):
         shortcuts_action = QAction("⌨️ 단축키 안내", self)
         shortcuts_action.triggered.connect(self.show_shortcuts_help)
         menu.addAction(shortcuts_action)
+        
+        menu.addSeparator()
+        
+        # 옵션 메뉴
+        options_menu = menu.addMenu("⚙️ 옵션")
+        options_menu.setStyleSheet(menu_style)
+        
+        # 윈도우 투명도 조절
+        window_opacity_action = QAction("🌫️ 윈도우 투명도 조절", self)
+        window_opacity_action.triggered.connect(self.adjust_window_opacity)
+        options_menu.addAction(window_opacity_action)
+        
+        # 커스텀 테마 투명도 조절 (커스텀 테마일 때만 표시)
+        if hasattr(self, 'current_theme') and self.current_theme == "커스텀 테마":
+            custom_transparency_action = QAction("🎨 커스텀 테마 투명도 조절", self)
+            custom_transparency_action.triggered.connect(self.adjust_custom_theme_transparency)
+            options_menu.addAction(custom_transparency_action)
+        
+        menu.addSeparator()
         
         # 사용자 매뉴얼
         manual_action = QAction("📖 사용자 매뉴얼", self)
@@ -6333,3 +6844,7 @@ if __name__ == "__main__":
     window = PromptBook()
     window.show()
     sys.exit(app.exec())
+    
+
+    
+
