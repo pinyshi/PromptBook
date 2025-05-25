@@ -7,6 +7,12 @@ from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
 import os, json, csv, shutil, sys
 
+# AI 테스터 모듈 import (개발 중)
+# try:
+#     from ai_tester import AITesterDialog
+# except ImportError:
+#     AITesterDialog = None
+
 # 휴지통 기능을 위한 모듈 추가
 try:
     from send2trash import send2trash
@@ -322,6 +328,9 @@ class PageItemWidget(QWidget):
         # 초기 상태 설정
         self.set_favorite(is_favorite)
         self.set_locked(is_locked)
+        
+        # 이벤트 필터 설치
+        self.installEventFilter(self)
     
     def mousePressEvent(self, event):
         """마우스 이벤트 처리 - Ctrl/Shift 키가 눌린 상태에서는 즐겨찾기 토글 방지"""
@@ -336,6 +345,53 @@ class PageItemWidget(QWidget):
         
         # 일반 클릭인 경우 기본 동작
         super().mousePressEvent(event)
+    
+    def mouseDoubleClickEvent(self, event):
+        """더블클릭으로 페이지 이름 변경"""
+        if event.button() == Qt.LeftButton:
+            # 부모 PromptBook 인스턴스 찾기
+            parent = self.parent()
+            while parent is not None:
+                if isinstance(parent, PromptBook):
+                    # 현재 페이지 찾기
+                    for i in range(parent.char_list.count()):
+                        item = parent.char_list.item(i)
+                        widget = parent.char_list.itemWidget(item)
+                        if widget == self:
+                            # 이름 변경 대화상자 호출
+                            parent.rename_character_dialog(item)
+                            return
+                    break
+                parent = parent.parent()
+        
+        super().mouseDoubleClickEvent(event)
+    
+    def contextMenuEvent(self, event):
+        """컨텍스트 메뉴 이벤트를 부모 리스트로 전달"""
+        # 부모 리스트 위젯 찾기
+        parent_list = self.parent()
+        while parent_list and not isinstance(parent_list, QListWidget):
+            parent_list = parent_list.parent()
+        
+        if parent_list and hasattr(parent_list, 'customContextMenuRequested'):
+            # 리스트 위젯의 좌표계로 변환
+            list_pos = parent_list.mapFromGlobal(event.globalPos())
+            parent_list.customContextMenuRequested.emit(list_pos)
+
+    def eventFilter(self, obj, event):
+        """키보드 이벤트를 부모 리스트로 전달"""
+        if event.type() == QEvent.KeyPress:
+            # 부모 리스트 위젯 찾기
+            parent_list = self.parent()
+            while parent_list and not isinstance(parent_list, QListWidget):
+                parent_list = parent_list.parent()
+            
+            if parent_list:
+                # 키 이벤트를 부모 리스트로 전달
+                QApplication.sendEvent(parent_list, event)
+                return True
+        
+        return super().eventFilter(obj, event)
     
     def set_locked(self, is_locked):
         """잠금 상태 설정"""
@@ -484,6 +540,9 @@ class BookItemWidget(QWidget):
         
         # 즐겨찾기 상태 설정
         self.set_favorite(is_favorite)
+        
+        # 이벤트 필터 설치
+        self.installEventFilter(self)
     
     def toggle_favorite(self):
         """즐겨찾기 토글 - 부모 PromptBook 인스턴스 찾아서 처리"""
@@ -543,6 +602,53 @@ class BookItemWidget(QWidget):
     
     def set_emoji(self, emoji):
         self.book_label.setText(emoji)
+    
+    def mouseDoubleClickEvent(self, event):
+        """더블클릭으로 북 이름 변경"""
+        if event.button() == Qt.LeftButton:
+            # 부모 PromptBook 인스턴스 찾기
+            parent = self.parent()
+            while parent is not None:
+                if isinstance(parent, PromptBook):
+                    # 현재 북 찾기
+                    for i in range(parent.book_list.count()):
+                        item = parent.book_list.item(i)
+                        widget = parent.book_list.itemWidget(item)
+                        if widget == self:
+                            # 이름 변경 대화상자 호출
+                            parent.rename_book_dialog(item)
+                            return
+                    break
+                parent = parent.parent()
+        
+        super().mouseDoubleClickEvent(event)
+    
+    def contextMenuEvent(self, event):
+        """컨텍스트 메뉴 이벤트를 부모 리스트로 전달"""
+        # 부모 리스트 위젯 찾기
+        parent_list = self.parent()
+        while parent_list and not isinstance(parent_list, QListWidget):
+            parent_list = parent_list.parent()
+        
+        if parent_list and hasattr(parent_list, 'customContextMenuRequested'):
+            # 리스트 위젯의 좌표계로 변환
+            list_pos = parent_list.mapFromGlobal(event.globalPos())
+            parent_list.customContextMenuRequested.emit(list_pos)
+
+    def eventFilter(self, obj, event):
+        """키보드 이벤트를 부모 리스트로 전달"""
+        if event.type() == QEvent.KeyPress:
+            # 부모 리스트 위젯 찾기
+            parent_list = self.parent()
+            while parent_list and not isinstance(parent_list, QListWidget):
+                parent_list = parent_list.parent()
+            
+            if parent_list:
+                # 키 이벤트를 부모 리스트로 전달
+                QApplication.sendEvent(parent_list, event)
+                return True
+        
+        return super().eventFilter(obj, event)
 
 class BookList(QListWidget):
     def __init__(self, parent=None):
@@ -831,7 +937,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.4"
+    VERSION = "v2.2.5"
     SAVE_FILE = "character_data.json"
     SETTINGS_FILE = "ui_settings.json"
     
@@ -1742,14 +1848,48 @@ class PromptBook(QMainWindow):
                     self.current_theme = saved_theme
                     print(f"[DEBUG] 저장된 테마 로드: {saved_theme}")
                 
-                # 커스텀 배경 이미지 복원
-                self.custom_background_image = settings.get("custom_background_image", None)
+                # 커스텀 배경 이미지 복원 및 검증
+                saved_background_image = settings.get("custom_background_image", None)
+                if saved_background_image and saved_theme == "커스텀 테마":
+                    # 커스텀 테마인 경우 이미지 파일 존재 여부 확인
+                    if os.path.exists(saved_background_image):
+                        self.custom_background_image = saved_background_image
+                        print(f"[DEBUG] 커스텀 배경 이미지 확인됨: {saved_background_image}")
+                    else:
+                        # 이미지 파일이 없으면 기본 테마로 되돌리기
+                        print(f"[WARNING] 커스텀 배경 이미지 파일이 존재하지 않음: {saved_background_image}")
+                        print(f"[INFO] 기본 어두운 모드로 되돌립니다.")
+                        self.current_theme = "어두운 모드"
+                        self.custom_background_image = None
+                        # 설정 파일도 즉시 업데이트
+                        self._update_settings_for_theme_fallback()
+                else:
+                    self.custom_background_image = saved_background_image
                 
                 # 커스텀 투명도 설정 복원
                 self.custom_transparency_level = settings.get("custom_transparency_level", 0.5)
             
         except Exception as e:
             print(f"[ERROR] 초기 UI 설정 불러오기 실패: {e}")
+    
+    def _update_settings_for_theme_fallback(self):
+        """테마 폴백 시 설정 파일 업데이트"""
+        try:
+            settings = {}
+            if os.path.exists(self.SETTINGS_FILE):
+                with open(self.SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+            
+            # 테마 관련 설정 업데이트
+            settings["current_theme"] = "어두운 모드"
+            settings["custom_background_image"] = None
+            
+            # 설정 파일 저장
+            with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+                
+        except Exception as e:
+            print(f"[ERROR] 테마 폴백 설정 저장 실패: {e}")
     
     def load_ui_settings_late(self):
         """UI 구성 후에 로드할 설정들 (크기, 정렬 등)"""
@@ -2881,111 +3021,112 @@ class PromptBook(QMainWindow):
                 
         self.save_to_file()
 
-
-
     def show_character_context_menu(self, position):
         item = self.char_list.itemAt(position)
         if not item:
             return
             
-            menu = QMenu()
-            
-            # 메뉴 스타일 적용
-            menu_style = self.get_menu_style()
-            menu.setStyleSheet(menu_style)
-            
-            # 선택된 아이템들 확인
-            selected_items = self.char_list.selectedItems()
-            selected_count = len(selected_items)
-            
-            if selected_count > 1:
-                # 다중 선택된 경우
-                menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
-                menu.addSeparator()
-                
-                duplicate_action = menu.addAction("📋 모두 복제")
-                delete_action = menu.addAction("🗑️ 모두 삭제")
-                
-                # 메뉴 실행 및 액션 처리
-                action = menu.exec(self.char_list.mapToGlobal(position))
-                if action == duplicate_action:
-                    self.duplicate_multiple_characters(selected_items)
-                elif action == delete_action:
-                    self.delete_multiple_characters(selected_items)
-                return
-            
-            # 단일 선택인 경우 기존 메뉴
-            name = item.data(Qt.UserRole)
-            is_favorite = False
-            
-            # 현재 즐겨찾기 상태 확인
-            for char in self.state.characters:
-                if char.get("name") == name:
-                    is_favorite = char.get("favorite", False)
-                    break
-            
-            # 즐겨찾기 액션 추가
-            if is_favorite:
-                favorite_action = menu.addAction("🖤 즐겨찾기 해제")
-            else:
-                favorite_action = menu.addAction("❤️ 즐겨찾기")
-            
-            # 구분선 추가
+        menu = QMenu()
+        
+        # 메뉴 스타일 적용
+        menu_style = self.get_menu_style()
+        menu.setStyleSheet(menu_style)
+        
+        # 선택된 아이템들 확인
+        selected_items = self.char_list.selectedItems()
+        selected_count = len(selected_items)
+        
+        if selected_count > 1:
+            # 다중 선택된 경우
+            menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
             menu.addSeparator()
             
-            # 이모지 변경 서브메뉴
-            emoji_menu = QMenu("🔄 이모지 변경")
-            emoji_menu.setStyleSheet("""
-                QMenu {
-                    padding: 2px;
-                }
-                QMenu::item {
-                    padding: 4px 16px 4px 4px;
-                    margin: 0px;
-                }
-                QMenu::item:selected {
-                    background-color: #505050;
-                    color: white;
-                }
-                QMenu::item:hover {
-                    background-color: #505050;
-                    color: white;
-                }
-            """)
-            menu.addMenu(emoji_menu)
+            duplicate_action = menu.addAction("📋 모두 복제")
+            delete_action = menu.addAction("🗑️ 모두 삭제")
             
-            # 페이지용 이모지 옵션 그룹화
-            page_emoji_groups = {
-                "페이지": ["📄", "📃", "🗒️", "📑", "🧾", "📰", "🗞️", "📋", "📌", "📎"],
-                "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
-                "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
-                "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
-                "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
-            }
-            
-            for group_name, emojis in page_emoji_groups.items():
-                group_menu = QMenu(group_name)
-                group_menu.setStyleSheet(menu_style)
-                emoji_menu.addMenu(group_menu)
-                for emoji in emojis:
-                    action = group_menu.addAction(emoji)
-                    action.triggered.connect(lambda checked, e=emoji, i=item: self.set_page_emoji(i, e))
-            
-            # 구분선 추가
-            menu.addSeparator()
-            
-            # 기타 액션들 추가
-            duplicate_action = menu.addAction("📋 복제")
-            delete_action = menu.addAction("🗑️ 삭제")
-            
-            # 메뉴 표시 및 액션 처리
+            # 메뉴 실행 및 액션 처리
             action = menu.exec(self.char_list.mapToGlobal(position))
-            if action == favorite_action:
-                self.toggle_favorite_star(item)
-            elif action == duplicate_action:
-                self.duplicate_selected_character()
+            if action == duplicate_action:
+                self.duplicate_multiple_characters(selected_items)
             elif action == delete_action:
-                self.delete_selected_character()
+                self.delete_multiple_characters(selected_items)
+            return
+        
+        # 단일 선택인 경우 기존 메뉴
+        name = item.data(Qt.UserRole)
+        is_favorite = False
+        
+        # 현재 즐겨찾기 상태 확인
+        for char in self.state.characters:
+            if char.get("name") == name:
+                is_favorite = char.get("favorite", False)
+                break
+        
+        # 즐겨찾기 액션 추가
+        if is_favorite:
+            favorite_action = menu.addAction("🖤 즐겨찾기 해제")
+        else:
+            favorite_action = menu.addAction("❤️ 즐겨찾기")
+        
+        # 구분선 추가
+        menu.addSeparator()
+        
+        # 이모지 변경 서브메뉴
+        emoji_menu = QMenu("🔄 이모지 변경")
+        emoji_menu.setStyleSheet("""
+            QMenu {
+                padding: 2px;
+            }
+            QMenu::item {
+                padding: 4px 16px 4px 4px;
+                margin: 0px;
+            }
+            QMenu::item:selected {
+                background-color: #505050;
+                color: white;
+            }
+            QMenu::item:hover {
+                background-color: #505050;
+                color: white;
+            }
+        """)
+        menu.addMenu(emoji_menu)
+        
+        # 페이지용 이모지 옵션 그룹화
+        page_emoji_groups = {
+            "페이지": ["📄", "📃", "🗒️", "📑", "🧾", "📰", "🗞️", "📋", "📌", "📎"],
+            "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
+            "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
+            "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
+            "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
+        }
+        
+        for group_name, emojis in page_emoji_groups.items():
+            group_menu = QMenu(group_name)
+            group_menu.setStyleSheet(menu_style)
+            emoji_menu.addMenu(group_menu)
+            for emoji in emojis:
+                action = group_menu.addAction(emoji)
+                action.triggered.connect(lambda checked, e=emoji, i=item: self.set_page_emoji(i, e))
+        
+        # 구분선 추가
+        menu.addSeparator()
+        
+        # 기타 액션들 추가
+        rename_action = menu.addAction("📝 이름 변경")
+        duplicate_action = menu.addAction("📋 복제")
+        delete_action = menu.addAction("🗑️ 삭제")
+        
+        # 메뉴 표시 및 액션 처리
+        action = menu.exec(self.char_list.mapToGlobal(position))
+        if action == favorite_action:
+            self.toggle_favorite_star(item)
+        elif action == rename_action:
+            self.rename_character_dialog(item)
+        elif action == duplicate_action:
+            self.duplicate_selected_character()
+        elif action == delete_action:
+            self.delete_selected_character()
         
     def set_page_emoji(self, item, emoji):
         """페이지 이모지를 변경합니다."""
@@ -3012,53 +3153,83 @@ class PromptBook(QMainWindow):
         if not item:
             return
             
-            menu = QMenu()
-            # 메뉴 스타일 적용
-            menu_style = self.get_menu_style()
-            menu.setStyleSheet(menu_style)
-            
-            # 선택된 아이템들 확인
-            selected_items = self.book_list.selectedItems()
-            selected_count = len(selected_items)
-            
-            if selected_count > 1:
-                # 다중 선택된 경우
-                menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
-                menu.addSeparator()
-                
-                delete_action = menu.addAction("🗑️ 모두 삭제")
-                
-                # 메뉴 실행 및 액션 처리
-                action = menu.exec(self.book_list.mapToGlobal(position))
-                if action == delete_action:
-                    self.delete_multiple_books(selected_items)
-                return
-            
-            # 단일 선택인 경우 기존 메뉴
-            name = item.data(Qt.UserRole)
-            is_favorite = False
-            
-            # 현재 즐겨찾기 상태 확인
-            if name in self.state.books:
-                is_favorite = self.state.books[name].get("favorite", False)
-            
-            # 즐겨찾기 액션 추가
-            if is_favorite:
-                favorite_action = menu.addAction("🖤 즐겨찾기 해제")
-            else:
-                favorite_action = menu.addAction("❤️ 즐겨찾기")
-            
-            # 구분선 추가
+        menu = QMenu()
+        # 메뉴 스타일 적용
+        menu_style = self.get_menu_style()
+        menu.setStyleSheet(menu_style)
+        
+        # 선택된 아이템들 확인
+        selected_items = self.book_list.selectedItems()
+        selected_count = len(selected_items)
+        
+        if selected_count > 1:
+            # 다중 선택된 경우
+            menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
             menu.addSeparator()
             
-            # 기본 메뉴 항목 추가
-            rename_action = menu.addAction("📝 이름 변경")
-            delete_action = menu.addAction("🗑️ 북 삭제")
-            menu.addSeparator()
+            delete_action = menu.addAction("🗑️ 모두 삭제")
             
-            # 이모지 변경 서브메뉴
-            emoji_menu = QMenu("🔄 이모지 변경")
-            emoji_menu.setStyleSheet("""
+            # 메뉴 실행 및 액션 처리
+            action = menu.exec(self.book_list.mapToGlobal(position))
+            if action == delete_action:
+                self.delete_multiple_books(selected_items)
+            return
+        
+        # 단일 선택인 경우 기존 메뉴
+        name = item.data(Qt.UserRole)
+        is_favorite = False
+        
+        # 현재 즐겨찾기 상태 확인
+        if name in self.state.books:
+            is_favorite = self.state.books[name].get("favorite", False)
+        
+        # 즐겨찾기 액션 추가
+        if is_favorite:
+            favorite_action = menu.addAction("🖤 즐겨찾기 해제")
+        else:
+            favorite_action = menu.addAction("❤️ 즐겨찾기")
+        
+        # 구분선 추가
+        menu.addSeparator()
+        
+        # 기본 메뉴 항목 추가
+        rename_action = menu.addAction("📝 이름 변경")
+        delete_action = menu.addAction("🗑️ 북 삭제")
+        menu.addSeparator()
+        
+        # 이모지 변경 서브메뉴
+        emoji_menu = QMenu("🔄 이모지 변경")
+        emoji_menu.setStyleSheet("""
+            QMenu {
+                padding: 2px;
+            }
+            QMenu::item {
+                padding: 4px 16px 4px 4px;
+                margin: 0px;
+            }
+            QMenu::item:selected {
+                background-color: #505050;
+                color: white;
+            }
+            QMenu::item:hover {
+                background-color: #505050;
+                color: white;
+            }
+        """)
+        menu.addMenu(emoji_menu)
+        
+        # 이모지 옵션 그룹화
+        emoji_groups = {
+            "책": ["📕", "📘", "📙", "📗", "📓", "📔", "📒", "📚", "📖", "📝"],
+            "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
+            "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
+            "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
+            "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
+        }
+        
+        for group_name, emojis in emoji_groups.items():
+            group_menu = QMenu(group_name)
+            group_menu.setStyleSheet("""
                 QMenu {
                     padding: 2px;
                 }
@@ -3075,49 +3246,19 @@ class PromptBook(QMainWindow):
                     color: white;
                 }
             """)
-            menu.addMenu(emoji_menu)
-            
-            # 이모지 옵션 그룹화
-            emoji_groups = {
-                "책": ["📕", "📘", "📙", "📗", "📓", "📔", "📒", "📚", "📖", "📝"],
-                "특수": ["🌟", "✨", "🔥", "🎯", "🚀", "🧩", "🎨", "💡", "❤️", "💀"],
-                "동물": ["🐉", "🦄", "🐱", "👻", "🍀", "🪐", "😺"],
-                "표정": ["😀", "😎", "🥳", "😈", "🤖", "👽", "👾", "🙈"],
-                "사람": ["👧", "👩", "🧒", "👸", "💃", "🧝‍♀️", "🧚‍♀️", "🧞‍♀️", "👩‍🎤", "👩‍🔬"]
-            }
-            
-            for group_name, emojis in emoji_groups.items():
-                group_menu = QMenu(group_name)
-                group_menu.setStyleSheet("""
-                    QMenu {
-                        padding: 2px;
-                    }
-                    QMenu::item {
-                        padding: 4px 16px 4px 4px;
-                        margin: 0px;
-                    }
-                    QMenu::item:selected {
-                        background-color: #505050;
-                        color: white;
-                    }
-                    QMenu::item:hover {
-                        background-color: #505050;
-                        color: white;
-                    }
-                """)
-                emoji_menu.addMenu(group_menu)
-                for emoji in emojis:
-                    action = group_menu.addAction(emoji)
-                    action.triggered.connect(lambda checked, e=emoji, i=item: self.set_book_emoji(i, e))
-            
-            # 메뉴 실행 및 액션 처리
-            action = menu.exec(self.book_list.mapToGlobal(position))
-            if action == favorite_action:
-                self.toggle_book_favorite(item)
-            elif action == rename_action:
-                self.rename_book_dialog(item)
-            elif action == delete_action:
-                self.delete_book(item)
+            emoji_menu.addMenu(group_menu)
+            for emoji in emojis:
+                action = group_menu.addAction(emoji)
+                action.triggered.connect(lambda checked, e=emoji, i=item: self.set_book_emoji(i, e))
+        
+        # 메뉴 실행 및 액션 처리
+        action = menu.exec(self.book_list.mapToGlobal(position))
+        if action == favorite_action:
+            self.toggle_book_favorite(item)
+        elif action == rename_action:
+            self.rename_book_dialog(item)
+        elif action == delete_action:
+            self.delete_book(item)
         
     def set_book_emoji(self, item, emoji):
         """북 이모지를 변경합니다."""
@@ -3342,130 +3483,144 @@ class PromptBook(QMainWindow):
         if not selected_items:
             return
             
-            book_names = []
-            for item in selected_items:
-                name = item.data(Qt.UserRole)
-                if name:
-                    book_names.append(name)
+        book_names = []
+        for item in selected_items:
+            name = item.data(Qt.UserRole)
+            if name:
+                book_names.append(name)
+        
+        if not book_names:
+            return
+        
+        # 잠긴 페이지가 있는 북 검사
+        books_with_locked_pages = []
+        for book_name in book_names:
+            if book_name in self.state.books:
+                pages = self.state.books[book_name].get("pages", [])
+                locked_pages = [page.get("name", "") for page in pages if page.get("locked", False)]
+                if locked_pages:
+                    books_with_locked_pages.append((book_name, locked_pages))
+        
+        # 잠긴 페이지가 있는 북이 있으면 경고
+        if books_with_locked_pages:
+            warning_message = "다음 북들에는 잠긴 페이지가 있어 삭제할 수 없습니다:\n\n"
+            for book_name, locked_pages in books_with_locked_pages:
+                warning_message += f"📕 {book_name}:\n"
+                for page_name in locked_pages:
+                    warning_message += f"  🔒 {page_name}\n"
+            warning_message += "\n잠긴 페이지들의 잠금을 해제한 후 다시 시도해주세요."
             
-            if not book_names:
-                return
-            
-            # 삭제 확인 대화상자
-            count = len(book_names)
-            if count == 1:
-                message = f"'{book_names[0]}' 북을 삭제하시겠습니까?"
-            else:
-                message = f"선택된 {count}개의 북을 삭제하시겠습니까?"
-            
-            reply = QMessageBox.question(
-                self, 
-                "북 삭제 확인",
-                f"{message}\n이 작업은 되돌릴 수 없습니다.",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes  # Enter 키로 삭제 확인 가능
+            QMessageBox.warning(
+                self,
+                "북 삭제 불가",
+                warning_message
             )
+            return
+        
+        # 삭제 확인 대화상자
+        count = len(book_names)
+        if count == 1:
+            message = f"'{book_names[0]}' 북을 삭제하시겠습니까?"
+        else:
+            message = f"선택된 {count}개의 북을 삭제하시겠습니까?"
+        
+        reply = QMessageBox.question(
+            self, 
+            "북 삭제 확인",
+            f"{message}\n이 작업은 되돌릴 수 없습니다.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes  # Enter 키로 삭제 확인 가능
+        )
+        
+        if reply == QMessageBox.Yes:
+            # 현재 선택된 북이 삭제 목록에 있는지 확인
+            current_book_deleted = self.current_book in book_names
             
-            if reply == QMessageBox.Yes:
-                # 현재 선택된 북이 삭제 목록에 있는지 확인
-                current_book_deleted = self.current_book in book_names
-                
-                # 북들 삭제
-                for name in book_names:
-                    if name in self.state.books:
-                        del self.state.books[name]
-                
-                # 리스트에서 아이템들 제거
-                for item in selected_items:
-                    row = self.book_list.row(item)
-                    self.book_list.takeItem(row)
-                
-                # 현재 선택된 북이 삭제된 경우 상태 초기화
-                if current_book_deleted:
-                    self.current_book = None
-                    self.state.characters = []
-                    self.char_list.clear()
-                    if hasattr(self, 'name_input'):
-                        self.name_input.clear()
-                    if hasattr(self, 'tag_input'):
-                        self.tag_input.clear()
-                    if hasattr(self, 'desc_input'):
-                        self.desc_input.clear()
-                    if hasattr(self, 'prompt_input'):
-                        self.prompt_input.clear()
-                    self.image_scene.clear()
-                
-                # UI 상태 업데이트
-                self.update_all_buttons_state()
-                self.save_to_file()
-                
-                # 다른 북이 있고 현재 북이 삭제되었다면 첫 번째 북 선택
-                if current_book_deleted and self.book_list.count() > 0:
-                    self.book_list.setCurrentRow(0)
-                    self.on_book_selected(0)
+            # 북들 삭제
+            for name in book_names:
+                if name in self.state.books:
+                    del self.state.books[name]
+            
+            # 리스트에서 아이템들 제거
+            for item in selected_items:
+                row = self.book_list.row(item)
+                self.book_list.takeItem(row)
+            
+            # 현재 선택된 북이 삭제된 경우 상태 초기화
+            if current_book_deleted:
+                self.current_book = None
+                self.state.characters = []
+                self.char_list.clear()
+                if hasattr(self, 'name_input'):
+                    self.name_input.clear()
+                if hasattr(self, 'tag_input'):
+                    self.tag_input.clear()
+                if hasattr(self, 'desc_input'):
+                    self.desc_input.clear()
+                if hasattr(self, 'prompt_input'):
+                    self.prompt_input.clear()
+                self.image_scene.clear()
+            
+            # UI 상태 업데이트
+            self.update_all_buttons_state()
+            self.save_to_file()
+            
+            # 다른 북이 있고 현재 북이 삭제되었다면 첫 번째 북 선택
+            if current_book_deleted and self.book_list.count() > 0:
+                self.book_list.setCurrentRow(0)
+                self.on_book_selected(0)
     
     def delete_multiple_characters(self, selected_items):
         """선택된 여러 페이지를 삭제합니다."""
         if not selected_items:
             return
             
-            page_names = []
-            locked_pages = []
-            
-            for item in selected_items:
-                name = item.data(Qt.UserRole)
-                if name:
-                    # 해당 페이지 찾기
-                    for char in self.state.characters:
-                        if char.get("name") == name:
-                            if char.get('locked', False):
-                                locked_pages.append(name)
-                            else:
-                                page_names.append(name)
-                            break
-            
-            # 잠금된 페이지가 있으면 경고
-            if locked_pages:
-                locked_names = ", ".join(locked_pages)
-                if page_names:
-                    reply = QMessageBox.question(
-                        self,
-                        "일부 삭제 불가",
-                        f"다음 페이지들은 잠금되어 있어 삭제할 수 없습니다:\n{locked_names}\n\n나머지 페이지들만 삭제하시겠습니까?",
-                        QMessageBox.Yes | QMessageBox.No,
-                        QMessageBox.No
-                    )
-                    if reply != QMessageBox.Yes:
-                        return
-                else:
-                    QMessageBox.warning(
-                        self,
-                        "삭제 불가",
-                        f"선택된 모든 페이지가 잠금되어 있습니다:\n{locked_names}\n\n잠금을 해제한 후 다시 시도해주세요."
-                    )
+        page_names = []
+        locked_pages = []
+        
+        for item in selected_items:
+            name = item.data(Qt.UserRole)
+            if name:
+                # 해당 페이지 찾기
+                for char in self.state.characters:
+                    if char.get("name") == name:
+                        if char.get('locked', False):
+                            locked_pages.append(name)
+                        else:
+                            page_names.append(name)
+                        break
+        
+        # 잠금된 페이지가 있으면 경고
+        if locked_pages:
+            locked_names = ", ".join(locked_pages)
+            if page_names:
+                reply = QMessageBox.question(
+                    self,
+                    "일부 삭제 불가",
+                    f"다음 페이지들은 잠금되어 있어 삭제할 수 없습니다:\n{locked_names}\n\n나머지 페이지들만 삭제하시겠습니까?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
                     return
-            
-            if not page_names:
-                return
-            
-            # 삭제 확인 대화상자
-            count = len(page_names)
-            if count == 1:
-                message = f"'{page_names[0]}' 페이지를 삭제하시겠습니까?"
             else:
-                message = f"선택된 {count}개의 페이지를 삭제하시겠습니까?"
-            
-            reply = QMessageBox.question(
-                self, 
-                "페이지 삭제 확인",
-                f"{message}\n이 작업은 되돌릴 수 없습니다.",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes  # Enter 키로 삭제 확인 가능
-            )
-            
-            if reply == QMessageBox.Yes:
-                # 페이지들 삭제 (역순으로 삭제하여 인덱스 문제 방지)
-                pages_to_delete = []
+                QMessageBox.warning(
+                    self,
+                    "삭제 불가",
+                    f"선택된 모든 페이지가 잠금되어 있습니다:\n{locked_names}\n\n잠금을 해제한 후 다시 시도해주세요."
+                )
+                return
+        
+        if not page_names:
+            return
+        
+        # 삭제 확인 대화상자
+        count = len(page_names)
+        if count == 1:
+            message = f"'{page_names[0]}' 페이지를 삭제하시겠습니까?"
+        else:
+            message = f"선택된 {count}개의 페이지를 삭제하시겠습니까?"
+        
         reply = QMessageBox.question(
             self, 
             "페이지 삭제 확인",
@@ -4475,6 +4630,13 @@ class PromptBook(QMainWindow):
         """배경 이미지를 적용합니다."""
         try:
             from PySide6.QtGui import QPixmap, QImageReader
+            import os
+            
+            # 이미지 파일 존재 여부 확인
+            if not os.path.exists(image_path):
+                print(f"[ERROR] 이미지 파일이 존재하지 않음: {image_path}")
+                self.handle_custom_theme_image_failure(image_path)
+                return
             
             # 고품질 이미지 리더 설정
             reader = QImageReader(image_path)
@@ -4486,12 +4648,14 @@ class PromptBook(QMainWindow):
             image = reader.read()
             if image.isNull():
                 print(f"[ERROR] 이미지 로드 실패: {image_path}")
+                self.handle_custom_theme_image_failure(image_path)
                 return
             
             # 이미지 품질 향상을 위한 변환 설정
             pixmap = QPixmap.fromImage(image, Qt.PreferDither | Qt.AutoColor)
             if pixmap.isNull():
                 print(f"[ERROR] 픽스맵 변환 실패: {image_path}")
+                self.handle_custom_theme_image_failure(image_path)
                 return
             
             # 배경 이미지 저장
@@ -4511,6 +4675,47 @@ class PromptBook(QMainWindow):
             
         except Exception as e:
             print(f"[ERROR] 배경 이미지 적용 실패: {e}")
+            self.handle_custom_theme_image_failure(image_path)
+
+    def handle_custom_theme_image_failure(self, failed_image_path):
+        """커스텀 테마 이미지 로드 실패 시 처리"""
+        try:
+            print(f"[INFO] 커스텀 테마 이미지 로드 실패로 인해 기본 테마로 되돌립니다.")
+            
+            # 커스텀 테마 설정 초기화
+            self.custom_background_image = None
+            self.current_theme = "어두운 모드"
+            
+            # 배경 이미지 제거
+            if hasattr(self, 'background_pixmap'):
+                self.background_pixmap = None
+            
+            # 기본 테마 적용
+            self.apply_theme("어두운 모드")
+            
+            # 테마 액션 상태 업데이트
+            if hasattr(self, 'theme_group') and self.theme_group:
+                for action in self.theme_group.actions():
+                    if "어두운 모드" in action.text():
+                        action.setChecked(True)
+                    else:
+                        action.setChecked(False)
+            
+            # 설정 파일에서 커스텀 테마 정보 제거
+            self.save_ui_settings()
+            
+            # 사용자에게 알림 (선택사항)
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "커스텀 테마 오류",
+                f"커스텀 테마 배경 이미지를 불러올 수 없어서\n기본 어두운 모드로 변경되었습니다.\n\n"
+                f"실패한 이미지 경로:\n{failed_image_path}\n\n"
+                f"새로운 커스텀 테마를 설정하려면\n메뉴에서 다시 선택해주세요."
+            )
+            
+        except Exception as e:
+            print(f"[ERROR] 커스텀 테마 실패 처리 중 오류: {e}")
 
     def remove_background_image(self):
         """배경 이미지를 제거합니다."""
@@ -4677,17 +4882,27 @@ class PromptBook(QMainWindow):
                 QLabel {{
                     color: {theme['text']};
                     background-color: transparent;
+                    font-weight: bold;
                 }}
                 QPushButton {{
                     background-color: {theme['button']};
-                    border: 1px solid {theme['border']};
+                    border: 2px solid {theme['border']};
                     color: {theme['text']};
-                    padding: 8px 16px;
-                    border-radius: 5px;
+                    padding: 10px 20px;
+                    border-radius: 6px;
                     font-weight: bold;
+                    font-size: 13px;
+                    min-width: 80px;
                 }}
                 QPushButton:hover {{
                     background-color: {theme['button_hover']};
+                    border: 2px solid {theme['primary']};
+                    color: {theme['primary']};
+                }}
+                QPushButton:pressed {{
+                    background-color: {theme['primary']};
+                    color: {theme['background']};
+                    border: 2px solid {theme['primary']};
                 }}
                 QSlider::groove:horizontal {{
                     border: 1px solid {theme['border']};
@@ -5261,6 +5476,26 @@ class PromptBook(QMainWindow):
         
         print("[DEBUG] 단축키 설정 완료")
     
+    def eventFilter(self, obj, event):
+        """이벤트 필터 - 키보드 이벤트 처리"""
+        if event.type() == QEvent.KeyPress:
+            # F2 키 처리
+            if event.key() == Qt.Key_F2:
+                self.rename_focused_item()
+                return True
+            
+            # Delete 키 처리
+            elif event.key() == Qt.Key_Delete:
+                self.delete_focused_item()
+                return True
+            
+            # Ctrl+D 키 처리
+            elif event.key() == Qt.Key_D and event.modifiers() == Qt.ControlModifier:
+                self.duplicate_focused_characters()
+                return True
+        
+        return super().eventFilter(obj, event)
+    
     def setup_resize_handles(self):
         """투명한 리사이즈 핸들들 설정"""
         handle_size = 8  # 핸들 두께
@@ -5499,19 +5734,41 @@ class PromptBook(QMainWindow):
             self.update_resize_handles()
     
     def apply_rounded_corners(self):
-        """윈도우에 둥근 모서리 마스크 적용"""
+        """윈도우에 둥근 모서리 마스크 적용 (안티앨리어싱)"""
         # 윈도우 크기 가져오기
         rect = self.rect()
         
-        # 둥근 사각형 경로 생성
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), self.border_radius, self.border_radius)
+        # 크기가 너무 작으면 둥근 모서리 적용하지 않음
+        if rect.width() < 20 or rect.height() < 20:
+            return
         
-        # 경로를 QRegion으로 변환
-        region = QRegion(path.toFillPolygon().toPolygon())
+        # 고해상도 픽스맵 생성 (안티앨리어싱을 위해 2배 크기)
+        scale_factor = 2
+        high_res_size = QSize(rect.width() * scale_factor, rect.height() * scale_factor)
+        pixmap = QPixmap(high_res_size)
+        pixmap.fill(Qt.transparent)  # 투명으로 초기화
+        
+        # 고품질 페인터로 둥근 사각형 그리기
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setBrush(QBrush(Qt.black))  # 불투명 영역
+        painter.setPen(Qt.NoPen)
+        
+        # 스케일된 둥근 사각형 그리기
+        scaled_rect = QRectF(0, 0, rect.width() * scale_factor, rect.height() * scale_factor)
+        scaled_radius = self.border_radius * scale_factor
+        painter.drawRoundedRect(scaled_rect, scaled_radius, scaled_radius)
+        painter.end()
+        
+        # 원본 크기로 스케일 다운
+        final_pixmap = pixmap.scaled(rect.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        
+        # 픽스맵을 마스크로 변환
+        mask = final_pixmap.createMaskFromColor(Qt.transparent, Qt.MaskInColor)
         
         # 윈도우 마스크 설정
-        self.setMask(region)
+        self.setMask(mask)
     
     def show_main_menu(self):
         """메인 메뉴 표시"""
@@ -5563,11 +5820,6 @@ class PromptBook(QMainWindow):
             custom_transparency_action.triggered.connect(self.adjust_custom_theme_transparency)
             options_menu.addAction(custom_transparency_action)
         
-        # 후원 메뉴
-        donate_action = QAction("💖 Donate", self)
-        donate_action.triggered.connect(self.show_kakao_info)
-        menu.addAction(donate_action)
-        
         # 단축키 안내
         shortcuts_action = QAction("⌨️ 단축키 안내", self)
         shortcuts_action.triggered.connect(self.show_shortcuts_help)
@@ -5577,6 +5829,16 @@ class PromptBook(QMainWindow):
         manual_action = QAction("📖 사용자 매뉴얼", self)
         manual_action.triggered.connect(self.show_user_manual)
         menu.addAction(manual_action)
+        
+        # 후원 메뉴
+        donate_action = QAction("💖 Donate", self)
+        donate_action.triggered.connect(self.show_kakao_info)
+        menu.addAction(donate_action)
+        
+        # AI 기능 테스터 (개발 중)
+        # ai_tester_action = QAction("🤖 AI 기능 테스터", self)
+        # ai_tester_action.triggered.connect(self.show_ai_tester)
+        # menu.addAction(ai_tester_action)
         
         # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
         button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
@@ -5940,41 +6202,58 @@ class PromptBook(QMainWindow):
         scroll_widget.setObjectName("scrollContent")
         scroll_layout = QVBoxLayout(scroll_widget)
         
-        # 단축키 데이터
+        # 단축키 데이터 (메인 메뉴 순서와 일치)
         shortcuts_data = [
+            {
+                "category": "📁 파일 관리",
+                "shortcuts": [
+                    ("💾 저장 버튼", "선택된 북을 Zip으로 저장"),
+                    ("📂 불러오기 버튼", "저장된 북 Zip 파일 불러오기"),
+                    ("📋 복사 버튼", "프롬프트 내용 클립보드 복사"),
+                ]
+            },
+            {
+                "category": "📚 북 관리",
+                "shortcuts": [
+                    ("➕ 북 추가 버튼", "새 북 추가"),
+                    ("우클릭", "북 컨텍스트 메뉴 (추가/삭제/이름변경/이모지변경)"),
+                    ("더블클릭", "북 이름 변경"),
+                    ("F2", "북 이름 변경 (북 포커스 시)"),
+                    ("Delete", "북 삭제 (다중 선택 지원)"),
+                    ("❤️ 클릭", "북 즐겨찾기 토글"),
+                ]
+            },
             {
                 "category": "📝 페이지 관리",
                 "shortcuts": [
                     ("Ctrl + N", "새 페이지 추가"),
                     ("Ctrl + S", "현재 페이지 저장"),
                     ("Ctrl + D", "페이지 복제 (다중 선택 지원)"),
-                    ("Delete", "페이지/북 삭제 (다중 선택 지원)"),
-                    ("F2", "페이지/북 이름 변경"),
+                    ("Delete", "페이지 삭제 (다중 선택 지원)"),
+                    ("F2", "페이지 이름 변경 (페이지 포커스 시)"),
+                    ("더블클릭", "페이지 이름 변경"),
+                    ("❤️ 클릭", "페이지 즐겨찾기 토글"),
+                    ("우클릭", "페이지 컨텍스트 메뉴 (잠금/이모지변경/이름변경)"),
                 ]
             },
             {
-                "category": "🔢 다중 선택",
+                "category": "🖼️ 이미지 관리",
+                "shortcuts": [
+                    ("이미지 드래그", "페이지에 이미지 추가"),
+                    ("🖼️ 이미지 버튼", "이미지 파일 선택하여 추가"),
+                    ("🗑️ 제거 버튼", "페이지의 이미지 제거"),
+                    ("마우스 휠", "이미지 확대/축소"),
+                    ("이미지 드래그", "이미지 뷰어에서 이미지 이동"),
+                ]
+            },
+            {
+                "category": "🔢 다중 선택 및 정렬",
                 "shortcuts": [
                     ("Ctrl + 클릭", "개별 항목을 하나씩 선택/해제"),
                     ("Shift + 클릭", "첫 선택부터 클릭 위치까지 범위 선택"),
                     ("Ctrl + A", "모든 항목 선택 (리스트 포커스 시)"),
-                ]
-            },
-            {
-                "category": "🖱️ 마우스 조작",
-                "shortcuts": [
-                    ("더블클릭", "페이지/북 이름 변경"),
-                    ("우클릭", "컨텍스트 메뉴 열기"),
-                    ("드래그", "정렬 순서 변경 (커스텀 모드)"),
-                    ("다중 드래그", "선택된 여러 항목 동시 이동"),
-                ]
-            },
-            {
-                "category": "📁 파일 관리",
-                "shortcuts": [
-                    ("이미지 드래그", "페이지에 이미지 추가"),
-                    ("Zip 불러오기", "저장된 북 불러오기"),
-                    ("Zip 저장", "현재 북 저장하기"),
+                    ("드래그", "선택된 여러 항목 동시 이동 (커스텀 정렬 모드)"),
+                    ("정렬 선택기", "오름차순/내림차순/커스텀 정렬 변경"),
                 ]
             }
         ]
@@ -6230,10 +6509,10 @@ class PromptBook(QMainWindow):
 <li><strong>Enter</strong>로 확인</li>
 </ol>
 
-<p><strong>방법 2: 메인 메뉴</strong></p>
+<p><strong>방법 2: 북 추가 버튼</strong></p>
 <ol>
-<li>상단 <strong>☰ 메뉴</strong> 클릭</li>
-<li><strong>"새 북 추가"</strong> 선택</li>
+<li>왼쪽 북 리스트 하단의 <strong>"➕ 북 추가"</strong> 버튼 클릭</li>
+<li>북 이름 입력 후 Enter</li>
 </ol>
 
 <h3>북 이름 변경</h3>
@@ -6836,6 +7115,27 @@ class PromptBook(QMainWindow):
         
         # 다이얼로그 표시
         dialog.exec()
+
+    # def show_ai_tester(self):
+    #     """AI 기능 테스터 대화상자 표시"""
+    #     if AITesterDialog is None:
+    #         QMessageBox.warning(
+    #             self,
+    #             "AI 테스터 오류",
+    #             "AI 테스터 모듈을 불러올 수 없습니다.\n"
+    #             "ai_tester.py 파일이 있는지 확인해주세요."
+    #         )
+    #         return
+    #     
+    #     try:
+    #         dialog = AITesterDialog(self, self)
+    #         dialog.exec()
+    #     except Exception as e:
+    #         QMessageBox.critical(
+    #             self,
+    #             "AI 테스터 오류",
+    #             f"AI 테스터를 실행하는 중 오류가 발생했습니다:\n{str(e)}"
+    #         )
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
