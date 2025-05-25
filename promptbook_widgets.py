@@ -38,13 +38,50 @@ class CustomLineEdit(QPlainTextEdit):
             self._completer.setCompletionPrefix(prefix)
             popup = self._completer.popup()
             popup.setCurrentIndex(self._completer.completionModel().index(0, 0))
-            popup.show()
+            
             prefix_start_pos = last_comma + 1 if last_comma != -1 else 0
             cursor = self.textCursor()
             cursor.setPosition(prefix_start_pos)
             rect = self.cursorRect(cursor)
-            QTimer.singleShot(0, lambda: popup.move(self.mapToGlobal(rect.bottomLeft())))
-            popup.raise_()
+            
+            # 팝업 크기 계산
+            popup_width = popup.sizeHintForColumn(0) + popup.verticalScrollBar().sizeHint().width()
+            popup_height = min(popup.sizeHint().height(), 200)  # 최대 높이 제한
+            
+            # 현재 위젯의 전역 좌표
+            widget_global_rect = self.mapToGlobal(self.rect().topLeft())
+            widget_bottom = widget_global_rect.y() + self.height()
+            
+            # 커서 위치의 전역 좌표
+            cursor_global_pos = self.mapToGlobal(rect.bottomLeft())
+            
+            # 화면 크기 가져오기
+            screen = QApplication.primaryScreen().geometry()
+            
+            # 아래쪽에 팝업을 표시할 공간이 충분한지 확인
+            space_below = screen.bottom() - cursor_global_pos.y()
+            space_above = cursor_global_pos.y() - screen.top()
+            
+            # 팝업 위치 결정
+            if space_below >= popup_height + 10:  # 아래쪽에 충분한 공간이 있으면
+                popup_pos = cursor_global_pos
+                popup_pos.setY(popup_pos.y() + 5)  # 커서 아래 5픽셀 여백
+            elif space_above >= popup_height + 10:  # 위쪽에 충분한 공간이 있으면
+                popup_pos = self.mapToGlobal(rect.topLeft())
+                popup_pos.setY(popup_pos.y() - popup_height - 5)  # 커서 위 5픽셀 여백
+            else:  # 공간이 부족하면 아래쪽에 표시하되 화면 안에 맞춤
+                popup_pos = cursor_global_pos
+                popup_pos.setY(min(popup_pos.y() + 5, screen.bottom() - popup_height))
+            
+            # X 좌표도 화면 안에 맞춤
+            popup_pos.setX(min(popup_pos.x(), screen.right() - popup_width))
+            popup_pos.setX(max(popup_pos.x(), screen.left()))
+            
+            QTimer.singleShot(0, lambda: (
+                popup.move(popup_pos),
+                popup.show(),
+                popup.raise_()
+            ))
         else:
             self._completer.popup().hide()
 
