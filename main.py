@@ -23,11 +23,12 @@ def get_images_directory():
     os.makedirs(images_dir, exist_ok=True)
     return images_dir
 
-# AI 테스터 모듈 import (개발 중)
-try:
-    from ai_tester import AITesterDialog
-except ImportError:
-    AITesterDialog = None
+# AI 테스터 모듈 import (숨김)
+# try:
+#     from ai_tester import AITesterDialog
+# except ImportError:
+#     AITesterDialog = None
+AITesterDialog = None
 
 # 휴지통 기능을 위한 모듈 추가
 try:
@@ -6531,11 +6532,11 @@ class PromptBook(QMainWindow):
         donate_action.triggered.connect(self.show_kakao_info)
         menu.addAction(donate_action)
         
-        # AI 기능 테스터
-        if AITesterDialog is not None:
-            ai_tester_action = QAction("🤖 AI 기능 테스터", self)
-            ai_tester_action.triggered.connect(self.show_ai_tester)
-            menu.addAction(ai_tester_action)
+        # AI 기능 테스터 (숨김)
+        # if AITesterDialog is not None:
+        #     ai_tester_action = QAction("🤖 AI 기능 테스터", self)
+        #     ai_tester_action.triggered.connect(self.show_ai_tester)
+        #     menu.addAction(ai_tester_action)
         
         # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
         button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
@@ -7820,26 +7821,26 @@ class PromptBook(QMainWindow):
         # 다이얼로그 표시
         dialog.exec()
 
-    def show_ai_tester(self):
-        """AI 기능 테스터 대화상자 표시"""
-        if AITesterDialog is None:
-            QMessageBox.warning(
-                self,
-                "AI 테스터 오류",
-                "AI 테스터 모듈을 불러올 수 없습니다.\n"
-                "ai_tester.py 파일이 있는지 확인해주세요."
-            )
-            return
-        
-        try:
-            dialog = AITesterDialog(self, self)
-            dialog.exec()
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "AI 테스터 오류",
-                f"AI 테스터를 실행하는 중 오류가 발생했습니다:\n{str(e)}"
-            )
+    # def show_ai_tester(self):
+    #     """AI 기능 테스터 대화상자 표시"""
+    #     if AITesterDialog is None:
+    #         QMessageBox.warning(
+    #             self,
+    #             "AI 테스터 오류",
+    #             "AI 테스터 모듈을 불러올 수 없습니다.\n"
+    #             "ai_tester.py 파일이 있는지 확인해주세요."
+    #         )
+    #         return
+    #     
+    #     try:
+    #         dialog = AITesterDialog(self, self)
+    #         dialog.exec()
+    #     except Exception as e:
+    #         QMessageBox.critical(
+    #             self,
+    #             "AI 테스터 오류",
+    #             f"AI 테스터를 실행하는 중 오류가 발생했습니다:\n{str(e)}"
+    #         )
 
 class LogDialog(QDialog):
     """로그 표시용 팝업 대화상자"""
