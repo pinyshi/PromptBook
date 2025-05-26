@@ -24,10 +24,10 @@ def get_images_directory():
     return images_dir
 
 # AI 테스터 모듈 import (개발 중)
-# try:
-#     from ai_tester import AITesterDialog
-# except ImportError:
-#     AITesterDialog = None
+try:
+    from ai_tester import AITesterDialog
+except ImportError:
+    AITesterDialog = None
 
 # 휴지통 기능을 위한 모듈 추가
 try:
@@ -953,7 +953,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.6"
+    VERSION = "v2.2.7"
     
     @property
     def SAVE_FILE(self):
@@ -1196,6 +1196,11 @@ class PromptBook(QMainWindow):
         
         # 리사이즈 핸들들
         self.resize_handles = {}
+        
+        # 클립보드 관련 변수
+        self.clipboard_pages = []  # 복사/잘라내기된 페이지들
+        self.clipboard_operation = None  # 'copy' 또는 'cut'
+        self.clipboard_source_book = None  # 소스 북 이름
         
         # 저장된 설정 먼저 로드 (테마 정보 포함)
         self.load_ui_settings_early()
@@ -3138,12 +3143,22 @@ class PromptBook(QMainWindow):
             menu.addAction(f"🔢 선택된 항목: {selected_count}개").setEnabled(False)
             menu.addSeparator()
             
+            # 클립보드 액션들 추가
+            copy_action = menu.addAction("📋 모두 복사하기")
+            cut_action = menu.addAction("✂️ 모두 잘라내기")
+            
+            menu.addSeparator()
+            
             duplicate_action = menu.addAction("📋 모두 복제")
             delete_action = menu.addAction("🗑️ 모두 삭제")
             
             # 메뉴 실행 및 액션 처리
             action = menu.exec(self.char_list.mapToGlobal(position))
-            if action == duplicate_action:
+            if action == copy_action:
+                self.copy_pages_to_clipboard(show_tooltip=True)
+            elif action == cut_action:
+                self.cut_pages_to_clipboard(show_tooltip=True)
+            elif action == duplicate_action:
                 self.duplicate_multiple_characters(selected_items)
             elif action == delete_action:
                 self.delete_multiple_characters(selected_items)
@@ -3209,6 +3224,13 @@ class PromptBook(QMainWindow):
         # 구분선 추가
         menu.addSeparator()
         
+        # 클립보드 액션들 추가
+        copy_action = menu.addAction("📋 복사하기")
+        cut_action = menu.addAction("✂️ 잘라내기")
+        
+        # 구분선 추가
+        menu.addSeparator()
+        
         # 기타 액션들 추가
         rename_action = menu.addAction("📝 이름 변경")
         duplicate_action = menu.addAction("📋 복제")
@@ -3218,6 +3240,10 @@ class PromptBook(QMainWindow):
         action = menu.exec(self.char_list.mapToGlobal(position))
         if action == favorite_action:
             self.toggle_favorite_star(item)
+        elif action == copy_action:
+            self.copy_pages_to_clipboard(show_tooltip=True)
+        elif action == cut_action:
+            self.cut_pages_to_clipboard(show_tooltip=True)
         elif action == rename_action:
             self.rename_character_dialog(item)
         elif action == duplicate_action:
@@ -3289,6 +3315,20 @@ class PromptBook(QMainWindow):
         # 구분선 추가
         menu.addSeparator()
         
+        # 클립보드 액션 추가
+        paste_action = menu.addAction("📋 붙여넣기")
+        # 클립보드에 페이지가 없으면 비활성화
+        if not self.clipboard_pages:
+            paste_action.setEnabled(False)
+        else:
+            # 클립보드 정보 표시
+            operation_text = "복사" if self.clipboard_operation == "copy" else "잘라내기"
+            page_count = len(self.clipboard_pages)
+            paste_action.setText(f"📋 붙여넣기 ({operation_text}: {page_count}개)")
+        
+        # 구분선 추가
+        menu.addSeparator()
+        
         # 기본 메뉴 항목 추가
         rename_action = menu.addAction("📝 이름 변경")
         delete_action = menu.addAction("🗑️ 북 삭제")
@@ -3352,6 +3392,8 @@ class PromptBook(QMainWindow):
         action = menu.exec(self.book_list.mapToGlobal(position))
         if action == favorite_action:
             self.toggle_book_favorite(item)
+        elif action == paste_action:
+            self.paste_pages_from_clipboard(item, show_tooltip=True)
         elif action == rename_action:
             self.rename_book_dialog(item)
         elif action == delete_action:
@@ -4099,6 +4141,227 @@ class PromptBook(QMainWindow):
         self.state.books = new_book_order
         print("[DEBUG] 새로운 북 순서로 저장됨")
         self.save_to_file()
+
+    def copy_pages_to_clipboard(self, show_tooltip=False):
+        """선택된 페이지들을 클립보드에 복사"""
+        selected_items = self.char_list.selectedItems()
+        if not selected_items:
+            return
+        
+        # 선택된 페이지들의 데이터 수집
+        self.clipboard_pages = []
+        for item in selected_items:
+            page_name = item.data(Qt.UserRole)
+            for char in self.state.characters:
+                if char.get("name") == page_name:
+                    # 페이지 데이터의 복사본 생성
+                    page_copy = char.copy()
+                    self.clipboard_pages.append(page_copy)
+                    break
+        
+        self.clipboard_operation = "copy"
+        self.clipboard_source_book = self.current_book
+        
+        # 툴팁 표시 (컨텍스트 메뉴에서 호출된 경우)
+        if show_tooltip:
+            QToolTip.showText(
+                self.char_list.mapToGlobal(self.char_list.rect().center()),
+                f"📋 {len(selected_items)}개 페이지가 복사되었습니다"
+            )
+
+    def cut_pages_to_clipboard(self, show_tooltip=False):
+        """선택된 페이지들을 클립보드에 잘라내기"""
+        selected_items = self.char_list.selectedItems()
+        if not selected_items:
+            return
+        
+        # 잠긴 페이지가 있는지 확인
+        locked_pages = []
+        for item in selected_items:
+            page_name = item.data(Qt.UserRole)
+            for char in self.state.characters:
+                if char.get("name") == page_name and char.get("locked", False):
+                    locked_pages.append(page_name)
+        
+        # 잠긴 페이지가 있으면 경고 표시하고 중단
+        if locked_pages:
+            if show_tooltip:
+                QToolTip.showText(
+                    self.char_list.mapToGlobal(self.char_list.rect().center()),
+                    f"⚠️ 잠긴 페이지는 잘라낼 수 없습니다: {', '.join(locked_pages)}"
+                )
+            else:
+                QMessageBox.warning(self, "잘라내기 실패", f"잠긴 페이지는 잘라낼 수 없습니다:\n{', '.join(locked_pages)}")
+            return
+        
+        # 선택된 페이지들의 데이터 수집
+        self.clipboard_pages = []
+        for item in selected_items:
+            page_name = item.data(Qt.UserRole)
+            for char in self.state.characters:
+                if char.get("name") == page_name:
+                    # 페이지 데이터의 복사본 생성
+                    page_copy = char.copy()
+                    self.clipboard_pages.append(page_copy)
+                    break
+        
+        self.clipboard_operation = "cut"
+        self.clipboard_source_book = self.current_book
+        
+        # 툴팁 표시 (컨텍스트 메뉴에서 호출된 경우)
+        if show_tooltip:
+            QToolTip.showText(
+                self.char_list.mapToGlobal(self.char_list.rect().center()),
+                f"✂️ {len(selected_items)}개 페이지가 잘라내기되었습니다"
+            )
+
+    def paste_pages_from_clipboard(self, book_item, show_tooltip=False):
+        """클립보드의 페이지들을 지정된 북에 붙여넣기"""
+        if not self.clipboard_pages:
+            return
+        
+        # 대상 북 이름 가져오기
+        target_book_name = book_item.data(Qt.UserRole)
+        if not target_book_name or target_book_name not in self.state.books:
+            return
+        
+        # 대상 북의 페이지들 가져오기
+        target_pages = self.state.books[target_book_name]["pages"]
+        existing_names = {page["name"] for page in target_pages}
+        
+        # 페이지 붙여넣기
+        pasted_count = 0
+        for page_data in self.clipboard_pages:
+            # 중복 이름 처리
+            original_name = page_data["name"]
+            new_name = original_name
+            counter = 1
+            while new_name in existing_names:
+                new_name = f"{original_name} ({counter})"
+                counter += 1
+            
+            # 페이지 데이터 복사 및 이름 업데이트
+            new_page = page_data.copy()
+            new_page["name"] = new_name
+            
+            # 대상 북에 추가
+            target_pages.append(new_page)
+            existing_names.add(new_name)
+            pasted_count += 1
+        
+        # 잘라내기인 경우 원본 페이지들 삭제
+        if self.clipboard_operation == "cut" and self.clipboard_source_book:
+            if self.clipboard_source_book in self.state.books:
+                source_pages = self.state.books[self.clipboard_source_book]["pages"]
+                clipboard_names = {page["name"] for page in self.clipboard_pages}
+                
+                # 역순으로 삭제 (인덱스 변화 방지)
+                for i in range(len(source_pages) - 1, -1, -1):
+                    if source_pages[i]["name"] in clipboard_names:
+                        del source_pages[i]
+                
+                # 소스 북이 현재 선택된 북이면 UI 업데이트
+                if self.clipboard_source_book == self.current_book:
+                    self.refresh_character_list()
+        
+        # 대상 북이 현재 선택된 북이면 UI 업데이트
+        if target_book_name == self.current_book:
+            self.refresh_character_list()
+        
+        # 데이터 저장
+        self.save_to_file()
+        
+        # 툴팁 표시 (컨텍스트 메뉴에서 호출된 경우)
+        if show_tooltip:
+            operation_text = "복사" if self.clipboard_operation == "copy" else "잘라내기"
+            QToolTip.showText(
+                self.book_list.mapToGlobal(self.book_list.rect().center()),
+                f"📋 {operation_text}된 {pasted_count}개 페이지가 '{target_book_name}' 북에 붙여넣기되었습니다"
+            )
+        
+        # 잘라내기인 경우 클립보드 초기화
+        if self.clipboard_operation == "cut":
+            self.clipboard_pages = []
+            self.clipboard_operation = None
+            self.clipboard_source_book = None
+
+    def handle_copy_shortcut(self):
+        """Ctrl+C 단축키 처리 - 페이지 복사"""
+        # 페이지 리스트에 포커스가 있고 선택된 페이지가 있는 경우에만 실행
+        if self.char_list.hasFocus() and self.char_list.selectedItems():
+            selected_count = len(self.char_list.selectedItems())
+            self.copy_pages_to_clipboard()
+            
+            # 툴팁 표시
+            QToolTip.showText(
+                self.char_list.mapToGlobal(self.char_list.rect().center()),
+                f"📋 {selected_count}개 페이지가 복사되었습니다"
+            )
+            print(f"[DEBUG] Ctrl+C: {selected_count}개 페이지 복사됨")
+
+    def handle_cut_shortcut(self):
+        """Ctrl+X 단축키 처리 - 페이지 잘라내기"""
+        # 페이지 리스트에 포커스가 있고 선택된 페이지가 있는 경우에만 실행
+        if self.char_list.hasFocus() and self.char_list.selectedItems():
+            selected_count = len(self.char_list.selectedItems())
+            
+            # 잠긴 페이지가 있는지 미리 확인
+            locked_pages = []
+            for item in self.char_list.selectedItems():
+                page_name = item.data(Qt.UserRole)
+                for char in self.state.characters:
+                    if char.get("name") == page_name and char.get("locked", False):
+                        locked_pages.append(page_name)
+            
+            if locked_pages:
+                # 잠긴 페이지가 있으면 툴팁으로 경고 표시
+                QToolTip.showText(
+                    self.char_list.mapToGlobal(self.char_list.rect().center()),
+                    f"⚠️ 잠긴 페이지는 잘라낼 수 없습니다: {', '.join(locked_pages)}"
+                )
+                return
+            
+            self.cut_pages_to_clipboard()
+            
+            # 툴팁 표시
+            QToolTip.showText(
+                self.char_list.mapToGlobal(self.char_list.rect().center()),
+                f"✂️ {selected_count}개 페이지가 잘라내기되었습니다"
+            )
+            print(f"[DEBUG] Ctrl+X: {selected_count}개 페이지 잘라내기됨")
+
+    def handle_paste_shortcut(self):
+        """Ctrl+V 단축키 처리 - 페이지 붙여넣기"""
+        # 북 리스트에 포커스가 있고 선택된 북이 있으며 클립보드에 페이지가 있는 경우에만 실행
+        if (self.book_list.hasFocus() and 
+            self.book_list.selectedItems() and 
+            self.clipboard_pages):
+            
+            selected_book_item = self.book_list.selectedItems()[0]
+            book_name = selected_book_item.data(Qt.UserRole)
+            page_count = len(self.clipboard_pages)
+            operation_text = "복사" if self.clipboard_operation == "copy" else "잘라내기"
+            
+            self.paste_pages_from_clipboard(selected_book_item)
+            
+            # 툴팁 표시
+            QToolTip.showText(
+                self.book_list.mapToGlobal(self.book_list.rect().center()),
+                f"📋 {operation_text}된 {page_count}개 페이지가 '{book_name}' 북에 붙여넣기되었습니다"
+            )
+            print(f"[DEBUG] Ctrl+V: {page_count}개 페이지 붙여넣기됨")
+        elif self.book_list.hasFocus() and self.book_list.selectedItems() and not self.clipboard_pages:
+            # 클립보드가 비어있는 경우
+            QToolTip.showText(
+                self.book_list.mapToGlobal(self.book_list.rect().center()),
+                "📋 클립보드가 비어있습니다"
+            )
+        elif self.book_list.hasFocus() and not self.book_list.selectedItems():
+            # 북이 선택되지 않은 경우
+            QToolTip.showText(
+                self.book_list.mapToGlobal(self.book_list.rect().center()),
+                "📚 붙여넣을 북을 선택해주세요"
+            )
 
     def apply_theme(self, theme_name):
         """테마를 적용합니다."""
@@ -5853,6 +6116,18 @@ class PromptBook(QMainWindow):
         self.rename_shortcut = QShortcut(QKeySequence("F2"), self)
         self.rename_shortcut.activated.connect(self.rename_focused_item)
         
+        # Ctrl+C: 페이지 복사
+        self.copy_shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
+        self.copy_shortcut.activated.connect(self.handle_copy_shortcut)
+        
+        # Ctrl+X: 페이지 잘라내기
+        self.cut_shortcut = QShortcut(QKeySequence("Ctrl+X"), self)
+        self.cut_shortcut.activated.connect(self.handle_cut_shortcut)
+        
+        # Ctrl+V: 페이지 붙여넣기
+        self.paste_shortcut = QShortcut(QKeySequence("Ctrl+V"), self)
+        self.paste_shortcut.activated.connect(self.handle_paste_shortcut)
+        
         print("[DEBUG] 단축키 설정 완료")
     
     def eventFilter(self, obj, event):
@@ -5871,6 +6146,21 @@ class PromptBook(QMainWindow):
             # Ctrl+D 키 처리
             elif event.key() == Qt.Key_D and event.modifiers() == Qt.ControlModifier:
                 self.duplicate_focused_characters()
+                return True
+            
+            # Ctrl+C 키 처리
+            elif event.key() == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
+                self.handle_copy_shortcut()
+                return True
+            
+            # Ctrl+X 키 처리
+            elif event.key() == Qt.Key_X and event.modifiers() == Qt.ControlModifier:
+                self.handle_cut_shortcut()
+                return True
+            
+            # Ctrl+V 키 처리
+            elif event.key() == Qt.Key_V and event.modifiers() == Qt.ControlModifier:
+                self.handle_paste_shortcut()
                 return True
         
         return super().eventFilter(obj, event)
@@ -6241,10 +6531,11 @@ class PromptBook(QMainWindow):
         donate_action.triggered.connect(self.show_kakao_info)
         menu.addAction(donate_action)
         
-        # AI 기능 테스터 (개발 중)
-        # ai_tester_action = QAction("🤖 AI 기능 테스터", self)
-        # ai_tester_action.triggered.connect(self.show_ai_tester)
-        # menu.addAction(ai_tester_action)
+        # AI 기능 테스터
+        if AITesterDialog is not None:
+            ai_tester_action = QAction("🤖 AI 기능 테스터", self)
+            ai_tester_action.triggered.connect(self.show_ai_tester)
+            menu.addAction(ai_tester_action)
         
         # 메뉴 표시 위치 계산 (메뉴 버튼 아래쪽)
         button_pos = self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft())
@@ -6638,6 +6929,9 @@ class PromptBook(QMainWindow):
                 "shortcuts": [
                     ("Ctrl + N", "새 페이지 추가"),
                     ("Ctrl + S", "현재 페이지 저장"),
+                    ("Ctrl + C", "페이지 복사 (다중 선택 지원)"),
+                    ("Ctrl + X", "페이지 잘라내기 (다중 선택 지원)"),
+                    ("Ctrl + V", "페이지 붙여넣기 (북 선택 후)"),
                     ("Ctrl + D", "페이지 복제 (다중 선택 지원)"),
                     ("Delete", "페이지 삭제 (다중 선택 지원)"),
                     ("F2", "페이지 이름 변경 (페이지 포커스 시)"),
@@ -7526,26 +7820,26 @@ class PromptBook(QMainWindow):
         # 다이얼로그 표시
         dialog.exec()
 
-    # def show_ai_tester(self):
-    #     """AI 기능 테스터 대화상자 표시"""
-    #     if AITesterDialog is None:
-    #         QMessageBox.warning(
-    #             self,
-    #             "AI 테스터 오류",
-    #             "AI 테스터 모듈을 불러올 수 없습니다.\n"
-    #             "ai_tester.py 파일이 있는지 확인해주세요."
-    #         )
-    #         return
-    #     
-    #     try:
-    #         dialog = AITesterDialog(self, self)
-    #         dialog.exec()
-    #     except Exception as e:
-    #         QMessageBox.critical(
-    #             self,
-    #             "AI 테스터 오류",
-    #             f"AI 테스터를 실행하는 중 오류가 발생했습니다:\n{str(e)}"
-    #         )
+    def show_ai_tester(self):
+        """AI 기능 테스터 대화상자 표시"""
+        if AITesterDialog is None:
+            QMessageBox.warning(
+                self,
+                "AI 테스터 오류",
+                "AI 테스터 모듈을 불러올 수 없습니다.\n"
+                "ai_tester.py 파일이 있는지 확인해주세요."
+            )
+            return
+        
+        try:
+            dialog = AITesterDialog(self, self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "AI 테스터 오류",
+                f"AI 테스터를 실행하는 중 오류가 발생했습니다:\n{str(e)}"
+            )
 
 class LogDialog(QDialog):
     """로그 표시용 팝업 대화상자"""
