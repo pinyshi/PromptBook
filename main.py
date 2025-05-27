@@ -6,8 +6,8 @@ from promptbook_utils import PromptBookUtils
 from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
 import os, json, csv, shutil, sys, re
-import zipfile, datetime, hashlib, base64
-from cryptography.fernet import Fernet
+import zipfile, datetime, base64
+
 
 # EXIF 정보 읽기를 위한 모듈
 try:
@@ -1586,7 +1586,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.10"
+    VERSION = "v2.3.0"
     
     @property
     def SAVE_FILE(self):
@@ -2704,6 +2704,7 @@ class PromptBook(QMainWindow):
         self.duplicate_button.setEnabled(page_enabled)
         self.image_load_btn.setEnabled(page_enabled)
         self.image_remove_btn.setEnabled(page_enabled)
+        self.lock_checkbox.setEnabled(page_enabled)  # 페이지 잠금 체크박스 활성화 조건 추가
         
         # 잠금 상태에 따른 삭제 버튼 비활성화
         if page_enabled and self.current_index >= 0 and self.current_index < len(self.state.characters):
@@ -2889,7 +2890,43 @@ class PromptBook(QMainWindow):
         if os.path.exists(self.SAVE_FILE):
             try:
                 with open(self.SAVE_FILE, 'r', encoding='utf-8') as f:
-                    self.state.books = json.load(f)
+                    data = json.load(f)
+                
+                # 데이터 구조 호환성 검사 및 마이그레이션
+                if isinstance(data, dict):
+                    # 새로운 형식 (북 딕셔너리)인지 확인
+                    if all(isinstance(v, dict) and 'pages' in v for v in data.values() if isinstance(v, dict)):
+                        # 새로운 형식: {book_name: {pages: [...], emoji: "...", is_favorite: bool}}
+                        self.state.books = data
+                        print("[DEBUG] 새로운 형식의 데이터 로드됨")
+                    else:
+                        # 이전 형식일 가능성 - 기본 북으로 변환
+                        print("[DEBUG] 이전 형식 데이터 감지, 마이그레이션 시작")
+                        if isinstance(data, list):
+                            # 리스트 형태의 이전 데이터
+                            self.state.books = {
+                                "기본 북": {
+                                    "pages": data,
+                                    "emoji": "📕",
+                                    "is_favorite": False
+                                }
+                            }
+                        else:
+                            # 딕셔너리지만 구조가 다른 경우
+                            self.state.books = {
+                                "기본 북": {
+                                    "pages": [],
+                                    "emoji": "📕", 
+                                    "is_favorite": False
+                                }
+                            }
+                        print("[DEBUG] 마이그레이션 완료, 파일 저장")
+                        self.save_to_file()  # 마이그레이션된 데이터 저장
+                else:
+                    # 예상치 못한 형식
+                    print("[DEBUG] 예상치 못한 데이터 형식, 기본값으로 초기화")
+                    self.state.books = {}
+                
                 # 북 리스트 갱신
                 self.refresh_book_list()
 
@@ -2906,6 +2943,8 @@ class PromptBook(QMainWindow):
             except Exception as e:
                 print(f"불러오기 실패: {e}")
                 QMessageBox.warning(self, "오류", f"파일 불러오기 중 오류가 발생했습니다:\n{str(e)}")
+                # 오류 발생 시 기본값으로 초기화
+                self.state.books = {}
         self._initial_loading = False
 
     def change_character(self, new_index):
@@ -4214,6 +4253,25 @@ class PromptBook(QMainWindow):
                     if isinstance(widget, BookItemWidget):
                         current_book = widget.book_name
                 
+                # 북의 모든 이미지 파일들을 휴지통으로 이동
+                pages = self.state.books[book_name]["pages"]
+                deleted_images = []
+                for page in pages:
+                    image_path = page.get("image_path", "")
+                    if image_path and os.path.exists(image_path):
+                        try:
+                            if send2trash:
+                                send2trash(image_path)
+                                deleted_images.append(os.path.basename(image_path))
+                                print(f"[DEBUG] 이미지 파일을 휴지통으로 이동: {image_path}")
+                            else:
+                                # send2trash가 없으면 일반 삭제
+                                os.remove(image_path)
+                                deleted_images.append(os.path.basename(image_path))
+                                print(f"[DEBUG] 이미지 파일 삭제: {image_path}")
+                        except Exception as e:
+                            print(f"[ERROR] 이미지 파일 삭제 실패 {image_path}: {e}")
+                
                 # 북 삭제
                 del self.state.books[book_name]
                 row = self.book_list.row(item)
@@ -4229,6 +4287,8 @@ class PromptBook(QMainWindow):
                 # 변경사항 저장
                 self.save_to_file()
                 self.refresh_book_list()
+                
+                # 삭제 완료 (알림창 제거)
                 
             except Exception as e:
                 print(f"[ERROR] 북 삭제 중 오류 발생: {str(e)}")
@@ -4448,6 +4508,27 @@ class PromptBook(QMainWindow):
             # 현재 선택된 북이 삭제 목록에 있는지 확인
             current_book_deleted = self.current_book in book_names
             
+            # 모든 북의 이미지 파일들을 휴지통으로 이동
+            total_deleted_images = 0
+            for name in book_names:
+                if name in self.state.books:
+                    pages = self.state.books[name]["pages"]
+                    for page in pages:
+                        image_path = page.get("image_path", "")
+                        if image_path and os.path.exists(image_path):
+                            try:
+                                if send2trash:
+                                    send2trash(image_path)
+                                    total_deleted_images += 1
+                                    print(f"[DEBUG] 이미지 파일을 휴지통으로 이동: {image_path}")
+                                else:
+                                    # send2trash가 없으면 일반 삭제
+                                    os.remove(image_path)
+                                    total_deleted_images += 1
+                                    print(f"[DEBUG] 이미지 파일 삭제: {image_path}")
+                            except Exception as e:
+                                print(f"[ERROR] 이미지 파일 삭제 실패 {image_path}: {e}")
+            
             # 북들 삭제
             for name in book_names:
                 if name in self.state.books:
@@ -4481,6 +4562,9 @@ class PromptBook(QMainWindow):
             if current_book_deleted and self.book_list.count() > 0:
                 self.book_list.setCurrentRow(0)
                 self.on_book_selected(0)
+            
+            # 삭제 완료 메시지 (이미지 개수 포함)
+            # 삭제 완료 (알림창 제거)
     
     def delete_multiple_characters(self, selected_items):
         """선택된 여러 페이지를 삭제합니다."""
@@ -4570,23 +4654,18 @@ class PromptBook(QMainWindow):
             if self.current_book and self.current_book in self.state.books:
                 self.state.books[self.current_book]["pages"] = self.state.characters
             
-            # UI 업데이트
-            self.refresh_character_list()
+            # 삭제 후 빈 페이지 상태로 설정
+            self.current_index = -1
+            self.name_input.clear()
+            self.tag_input.clear()
+            self.desc_input.clear()
+            self.prompt_input.clear()
+            self.image_scene.clear()
+            self.image_view.drop_hint.setVisible(True)
             
-            # 현재 선택된 페이지가 삭제되었는지 확인
-            if self.current_index in pages_to_delete or not self.state.characters:
-                self.current_index = -1
-                if hasattr(self, 'name_input'):
-                    self.name_input.clear()
-                if hasattr(self, 'tag_input'):
-                    self.tag_input.clear()
-                if hasattr(self, 'desc_input'):
-                    self.desc_input.clear()
-                if hasattr(self, 'prompt_input'):
-                    self.prompt_input.clear()
-                self.image_scene.clear()
-                if hasattr(self.image_view, 'drop_hint'):
-                    self.image_view.drop_hint.setVisible(True)
+            # UI 업데이트 (선택 해제)
+            self.refresh_character_list()
+            self.char_list.clearSelection()
             
             self.save_to_file()
 
@@ -4818,18 +4897,18 @@ class PromptBook(QMainWindow):
             if self.current_book and self.current_book in self.state.books:
                 self.state.books[self.current_book]["pages"] = self.state.characters
             
-            # UI 업데이트
-            self.refresh_character_list()
+            # 삭제 후 빈 페이지 상태로 설정
+            self.current_index = -1
+            self.name_input.clear()
+            self.tag_input.clear()
+            self.desc_input.clear()
+            self.prompt_input.clear()
+            self.image_scene.clear()
+            self.image_view.drop_hint.setVisible(True)
             
-            # 입력 필드 초기화
-            if not self.state.characters:
-                self.current_index = -1
-                self.name_input.clear()
-                self.tag_input.clear()
-                self.desc_input.clear()
-                self.prompt_input.clear()
-                self.image_scene.clear()
-                self.image_view.drop_hint.setVisible(True)
+            # UI 업데이트 (선택 해제)
+            self.refresh_character_list()
+            self.char_list.clearSelection()
             
             self.save_to_file()
     
@@ -8695,19 +8774,32 @@ class PromptBook(QMainWindow):
         # 다이얼로그 표시
         dialog.exec()
 
-    def generate_encryption_key(self, password):
-        """비밀번호로부터 암호화 키 생성"""
-        # 비밀번호를 해시하여 32바이트 키 생성
-        key = hashlib.sha256(password.encode()).digest()
-        return base64.urlsafe_b64encode(key)
+
 
     def backup_book_list(self):
         """현재 북 리스트를 암호화하여 백업"""
         try:
             # 백업할 데이터가 있는지 확인
-            if not hasattr(self, 'books') or not self.books:
-                QMessageBox.warning(self, "백업 실패", "백업할 북이 없습니다.")
-                return
+            print(f"[DEBUG] books 속성 존재: {hasattr(self, 'books')}")
+            if hasattr(self, 'books'):
+                print(f"[DEBUG] books 내용: {self.books}")
+                print(f"[DEBUG] books 길이: {len(self.books) if self.books else 0}")
+            
+            # UI에서 북 리스트 개수 확인
+            book_count = self.book_list.count()
+            print(f"[DEBUG] UI 북 리스트 개수: {book_count}")
+            
+            # state.books를 사용하도록 수정 (실제 데이터 구조와 일치)
+            if hasattr(self, 'state') and hasattr(self.state, 'books'):
+                books_data = self.state.books
+                print(f"[DEBUG] state.books 사용: {books_data}")
+            else:
+                # state가 없다면 빈 딕셔너리로 초기화
+                books_data = {}
+                print("[DEBUG] state.books가 없어서 빈 딕셔너리 사용")
+            
+            print(f"[DEBUG] 백업할 북 데이터: {books_data}")
+            print(f"[DEBUG] 백업 진행 - 북 개수: {len(books_data)}")
 
             # 백업 디렉토리 생성
             backup_dir = get_backup_directory()
@@ -8717,15 +8809,27 @@ class PromptBook(QMainWindow):
             backup_filename = f"booklist_backup_{timestamp}.pbk"
             backup_path = os.path.join(backup_dir, backup_filename)
             
-            # 비밀번호 입력 대화상자
-            password, ok = QInputDialog.getText(
-                self, 
-                "백업 암호화", 
-                "백업 파일을 암호화할 비밀번호를 입력하세요:\n(복구 시 동일한 비밀번호가 필요합니다)",
-                QLineEdit.Password
+            # 이미지 개수 미리 계산
+            images_dir = get_images_directory()
+            image_count = 0
+            if os.path.exists(images_dir):
+                for filename in os.listdir(images_dir):
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                        image_count += 1
+            
+            # 백업 확인 대화상자
+            reply = QMessageBox.question(
+                self,
+                "백업 확인",
+                f"현재 북 리스트를 백업하시겠습니까?\n\n"
+                f"📚 북 개수: {len(books_data)}개\n"
+                f"🖼️ 이미지 개수: {image_count}개\n\n"
+                f"백업 파일은 ./backup/ 폴더에 저장됩니다.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
             )
             
-            if not ok or not password:
+            if reply != QMessageBox.Yes:
                 return
             
             # 진행 상황 대화상자
@@ -8738,7 +8842,7 @@ class PromptBook(QMainWindow):
             backup_data = {
                 "version": self.VERSION,
                 "timestamp": timestamp,
-                "books": self.books,
+                "books": books_data,
                 "images": {}
             }
             
@@ -8764,22 +8868,17 @@ class PromptBook(QMainWindow):
             # JSON으로 직렬화
             json_data = json.dumps(backup_data, ensure_ascii=False, indent=2)
             
-            # 암호화
-            key = self.generate_encryption_key(password)
-            fernet = Fernet(key)
-            encrypted_data = fernet.encrypt(json_data.encode('utf-8'))
-            
             progress.setValue(80)
             QApplication.processEvents()
             
-            # ZIP 파일로 압축
+            # ZIP 파일로 압축 (암호화 없이)
             with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                zipf.writestr("backup.dat", encrypted_data)
-                # 메타데이터 추가 (암호화되지 않음)
+                zipf.writestr("backup.json", json_data)
+                # 메타데이터 추가
                 metadata = {
                     "created": timestamp,
                     "version": self.VERSION,
-                    "book_count": len(self.books),
+                    "book_count": len(books_data),
                     "image_count": len(backup_data["images"])
                 }
                 zipf.writestr("metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2))
@@ -8795,9 +8894,9 @@ class PromptBook(QMainWindow):
                 f"북 리스트가 성공적으로 백업되었습니다.\n\n"
                 f"백업 파일: {backup_filename}\n"
                 f"백업 시간: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"북 개수: {len(self.books)}개\n"
+                f"북 개수: {len(books_data)}개\n"
                 f"이미지 개수: {len(backup_data['images'])}개\n\n"
-                f"⚠️ 비밀번호를 잊지 마세요!"
+                f"📁 백업 위치: ./backup/ 폴더"
             )
             
         except Exception as e:
@@ -8876,6 +8975,13 @@ class PromptBook(QMainWindow):
             
             # 버튼
             button_layout = QHBoxLayout()
+            
+            # 삭제 버튼 추가
+            delete_btn = QPushButton("🗑️ 삭제")
+            delete_btn.setEnabled(False)
+            delete_btn.clicked.connect(lambda: self.delete_backup_file(file_list, backup_files))
+            button_layout.addWidget(delete_btn)
+            
             button_layout.addStretch()
             
             cancel_btn = QPushButton("취소")
@@ -8889,9 +8995,11 @@ class PromptBook(QMainWindow):
             
             layout.addLayout(button_layout)
             
-            # 선택 변경 시 복구 버튼 활성화
+            # 선택 변경 시 버튼 활성화
             def on_selection_changed():
-                restore_btn.setEnabled(len(file_list.selectedItems()) > 0)
+                has_selection = len(file_list.selectedItems()) > 0
+                restore_btn.setEnabled(has_selection)
+                delete_btn.setEnabled(has_selection)
             
             file_list.itemSelectionChanged.connect(on_selection_changed)
             
@@ -8924,16 +9032,7 @@ class PromptBook(QMainWindow):
             if reply != QMessageBox.Yes:
                 return
             
-            # 비밀번호 입력
-            password, ok = QInputDialog.getText(
-                self,
-                "백업 복호화",
-                "백업 파일의 비밀번호를 입력하세요:",
-                QLineEdit.Password
-            )
-            
-            if not ok or not password:
-                return
+            # 복구 진행
             
             # 진행 상황 대화상자
             progress = QProgressDialog("북 리스트 복구 중...", "취소", 0, 100, self)
@@ -8941,26 +9040,22 @@ class PromptBook(QMainWindow):
             progress.show()
             QApplication.processEvents()
             
-            # 백업 파일 읽기 및 복호화
+            # 백업 파일 읽기
             with zipfile.ZipFile(backup_info['path'], 'r') as zipf:
-                encrypted_data = zipf.read('backup.dat')
+                json_data = zipf.read('backup.json').decode('utf-8')
             
             progress.setValue(20)
             QApplication.processEvents()
             
-            # 복호화
+            # JSON 파싱
             try:
-                key = self.generate_encryption_key(password)
-                fernet = Fernet(key)
-                decrypted_data = fernet.decrypt(encrypted_data)
-                json_data = decrypted_data.decode('utf-8')
                 backup_data = json.loads(json_data)
             except Exception as e:
                 progress.close()
                 QMessageBox.critical(
                     self,
                     "복구 실패",
-                    "비밀번호가 틀렸거나 백업 파일이 손상되었습니다."
+                    f"백업 파일이 손상되었습니다:\n{str(e)}"
                 )
                 return
             
@@ -8987,8 +9082,39 @@ class PromptBook(QMainWindow):
             progress.setValue(70)
             QApplication.processEvents()
             
-            # 북 데이터 복원
-            self.books = backup_data.get("books", {})
+            # 북 데이터 복원 (호환성 검사 포함)
+            books_data = backup_data.get("books", {})
+            
+            # 백업 데이터 호환성 검사
+            if isinstance(books_data, dict):
+                # 새로운 형식인지 확인
+                if all(isinstance(v, dict) and 'pages' in v for v in books_data.values() if isinstance(v, dict)):
+                    # 새로운 형식
+                    restored_books = books_data
+                else:
+                    # 이전 형식일 가능성 - 기본 북으로 변환
+                    if isinstance(books_data, list):
+                        # 리스트 형태
+                        restored_books = {
+                            "기본 북": {
+                                "pages": books_data,
+                                "emoji": "📕",
+                                "is_favorite": False
+                            }
+                        }
+                    else:
+                        # 딕셔너리지만 구조가 다른 경우
+                        restored_books = books_data if books_data else {}
+            else:
+                restored_books = {}
+            
+            if hasattr(self, 'state'):
+                self.state.books = restored_books
+            else:
+                # state가 없다면 생성
+                from promptbook_state import PromptBookState
+                self.state = PromptBookState()
+                self.state.books = restored_books
             
             # UI 새로고침
             self.refresh_book_list()
@@ -9007,7 +9133,7 @@ class PromptBook(QMainWindow):
                 "복구 완료",
                 f"북 리스트가 성공적으로 복구되었습니다.\n\n"
                 f"📅 백업 시간: {created_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"📚 복구된 북: {len(self.books)}개\n"
+                f"📚 복구된 북: {len(restored_books)}개\n"
                 f"🖼️ 복구된 이미지: {len(backup_data.get('images', {}))}개"
             )
             
@@ -9016,6 +9142,58 @@ class PromptBook(QMainWindow):
                 self,
                 "복구 실패",
                 f"복구 중 오류가 발생했습니다:\n{str(e)}"
+            )
+
+    def delete_backup_file(self, file_list, backup_files):
+        """선택된 백업 파일 삭제"""
+        try:
+            selected_items = file_list.selectedItems()
+            if not selected_items:
+                return
+            
+            backup_info = selected_items[0].data(Qt.UserRole)
+            metadata = backup_info['metadata']
+            created_time = datetime.datetime.strptime(metadata['created'], "%Y%m%d_%H%M%S")
+            
+            # 삭제 확인
+            reply = QMessageBox.question(
+                self,
+                "백업 파일 삭제",
+                f"다음 백업 파일을 삭제하시겠습니까?\n\n"
+                f"📅 백업 시간: {created_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"📚 북 개수: {metadata['book_count']}개\n"
+                f"🖼️ 이미지 개수: {metadata['image_count']}개\n"
+                f"📁 파일명: {backup_info['filename']}\n\n"
+                f"⚠️ 이 작업은 되돌릴 수 없습니다!",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # 파일 삭제
+            os.remove(backup_info['path'])
+            
+            # 리스트에서 제거
+            current_row = file_list.row(selected_items[0])
+            file_list.takeItem(current_row)
+            
+            # backup_files 리스트에서도 제거
+            backup_files[:] = [bf for bf in backup_files if bf['path'] != backup_info['path']]
+            
+            QMessageBox.information(
+                self,
+                "삭제 완료",
+                f"백업 파일이 성공적으로 삭제되었습니다.\n\n"
+                f"📁 {backup_info['filename']}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "삭제 실패",
+                f"백업 파일 삭제 중 오류가 발생했습니다:\n{str(e)}"
             )
 
     # def show_ai_tester(self):
