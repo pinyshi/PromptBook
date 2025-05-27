@@ -1586,7 +1586,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.9"
+    VERSION = "v2.2.10"
     
     @property
     def SAVE_FILE(self):
@@ -7330,6 +7330,23 @@ class PromptBook(QMainWindow):
         load_book_action = QAction("📂 저장된 북 불러오기", self)
         load_book_action.triggered.connect(self.load_saved_book)
         file_menu.addAction(load_book_action)
+        
+        # 구분선 추가
+        file_menu.addSeparator()
+        
+        # 백업 서브메뉴
+        backup_menu = file_menu.addMenu("💾 백업")
+        backup_menu.setStyleSheet(menu_style)  # 서브메뉴에도 적용
+        
+        # 현재 북 리스트 백업
+        backup_action = QAction("📦 현재 북 리스트 백업", self)
+        backup_action.triggered.connect(self.backup_book_list)
+        backup_menu.addAction(backup_action)
+        
+        # 백업된 북 리스트로 복구
+        restore_action = QAction("📥 백업된 북 리스트로 복구", self)
+        restore_action.triggered.connect(self.restore_book_list)
+        backup_menu.addAction(restore_action)
         
         # 테마 메뉴
         theme_menu = menu.addMenu("🎨 테마")
