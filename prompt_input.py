@@ -173,9 +173,17 @@ class CustomTextEdit(QTextEdit):
         if self._completer and self._completer.popup().isVisible():
             # Enter, Return, Tab 키로 자동 완성 선택
             if event.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Tab):
-                self._completer.popup().setCurrentIndex(self._completer.popup().currentIndex())
-                self.insert_completion(self._completer.currentCompletion())
-                self._completer.popup().hide()
+                # 현재 선택된 항목의 텍스트를 가져오기
+                popup = self._completer.popup()
+                current_index = popup.currentIndex()
+                if current_index.isValid():
+                    # 선택된 항목의 실제 텍스트 가져오기
+                    selected_text = current_index.data(Qt.DisplayRole)
+                    self.insert_completion(selected_text)
+                else:
+                    # 선택된 항목이 없으면 첫 번째 항목 사용
+                    self.insert_completion(self._completer.currentCompletion())
+                popup.hide()
                 return
             # Escape 키로 자동완성 팝업 닫기
             elif event.key() == Qt.Key_Escape:
@@ -188,12 +196,18 @@ class CustomTextEdit(QTextEdit):
 class PromptInput(QMainWindow):
     """프롬프트 입력기 메인 윈도우"""
     
-    VERSION = "v1.0"
+    VERSION = "v1.2"
     
     def __init__(self):
         super().__init__()
         # 창 고정 상태 변수
         self.always_on_top = False
+        # 시스템 트레이 상주 상태 변수
+        self.stay_in_tray = False
+        # 윈도우 투명도 (0.0 ~ 1.0, 기본값 1.0 = 불투명)
+        self.window_opacity = 1.0
+        # 옵션 패널 표시 상태
+        self.options_visible = False
         
         # 모든 에러 대화상자 차단
         self.disable_all_error_dialogs()
@@ -201,11 +215,18 @@ class PromptInput(QMainWindow):
         self.setup_ui()
         self.setup_autocomplete()
         self.setup_shortcuts()
+        self.setup_system_tray()
         
     def setup_ui(self):
         """UI 설정"""
         self.setWindowTitle(f"프롬프트 입력기 {self.VERSION}")
-        self.setFixedSize(600, 300)
+        # 초기 크기를 컴팩트하게 설정 (옵션 숨김 상태)
+        self.compact_height = 170  # 상태바 제거로 더 작게
+        self.expanded_height = 280  # 상태바 제거로 더 작게
+        self.setFixedSize(600, self.compact_height)
+        
+        # 상태바 숨기기
+        self.statusBar().hide()
         
         # 아이콘 설정 (PyInstaller 리소스 포함)
         try:
@@ -233,38 +254,97 @@ class PromptInput(QMainWindow):
         
         # 레이아웃
         layout = QVBoxLayout(central_widget)
-        layout.setSpacing(10)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(8)  # 간격 줄임
+        layout.setContentsMargins(10, 10, 10, 10)  # 여백 줄임
         
         # 프롬프트 입력란 (메모장 스타일 텍스트 에디트)
         self.prompt_input = CustomTextEdit()
         self.prompt_input.setPlaceholderText("프롬프트를 쉼표로 구분해서 입력하세요.")
-        self.prompt_input.setMinimumHeight(200)
+        self.prompt_input.setMinimumHeight(120)  # 더 컴팩트하게
         layout.addWidget(self.prompt_input)
         
-        # 버튼 레이아웃
-        button_layout = QHBoxLayout()
+        # 메인 버튼 레이아웃 (항상 보이는 부분)
+        main_button_layout = QHBoxLayout()
+        main_button_layout.setSpacing(8)
         
         # 복사 버튼
         self.copy_button = QPushButton("📋 복사")
         self.copy_button.clicked.connect(self.copy_prompt_to_clipboard)
-        self.copy_button.setMinimumHeight(35)
+        self.copy_button.setMinimumHeight(28)
+        self.copy_button.setMaximumWidth(80)
         self.copy_button.setToolTip("프롬프트를 클립보드에 복사합니다 (Ctrl+Shift+C)")
-        button_layout.addWidget(self.copy_button)
+        main_button_layout.addWidget(self.copy_button)
         
-        # 창 고정 버튼
+        # 옵션 토글 버튼
+        self.toggle_button = QPushButton("⚙️ 옵션")
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(self.options_visible)
+        self.toggle_button.clicked.connect(self.toggle_options)
+        self.toggle_button.setMinimumHeight(28)
+        self.toggle_button.setMaximumWidth(80)
+        self.toggle_button.setToolTip("고급 옵션을 표시/숨김합니다 (Ctrl+O)")
+        main_button_layout.addWidget(self.toggle_button)
+        
+        # 여백 추가
+        main_button_layout.addStretch()
+        
+        layout.addLayout(main_button_layout)
+        
+        # 옵션 패널 (숨김/표시 가능)
+        self.options_widget = QWidget()
+        self.options_widget.setVisible(self.options_visible)
+        
+        options_layout = QVBoxLayout(self.options_widget)
+        options_layout.setSpacing(6)
+        options_layout.setContentsMargins(0, 5, 0, 0)
+        
+        # 창 고정 옵션
+        pin_layout = QHBoxLayout()
         self.pin_button = QPushButton("📌 맨 위에 고정")
         self.pin_button.setCheckable(True)
         self.pin_button.setChecked(self.always_on_top)
         self.pin_button.clicked.connect(self.toggle_always_on_top)
-        self.pin_button.setMinimumHeight(35)
+        self.pin_button.setMinimumHeight(26)
+        self.pin_button.setMaximumWidth(110)
         self.pin_button.setToolTip("창을 다른 모든 창 위에 고정합니다 (Ctrl+T)")
-        button_layout.addWidget(self.pin_button)
+        pin_layout.addWidget(self.pin_button)
+        pin_layout.addStretch()
+        options_layout.addLayout(pin_layout)
         
-        layout.addLayout(button_layout)
+        # 투명도 조절
+        opacity_layout = QHBoxLayout()
+        opacity_label = QLabel("🔍 투명도:")
+        opacity_label.setMinimumWidth(50)
+        opacity_layout.addWidget(opacity_label)
         
-        # 상태바
-        self.statusBar().showMessage("프롬프트를 입력하고 복사 버튼을 클릭하세요.")
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setMinimum(30)
+        self.opacity_slider.setMaximum(100)
+        self.opacity_slider.setValue(int(self.window_opacity * 100))
+        self.opacity_slider.setMaximumWidth(120)
+        self.opacity_slider.valueChanged.connect(self.change_opacity)
+        self.opacity_slider.setToolTip("창의 투명도를 조절합니다 (30% ~ 100%)\nCtrl+Plus: 투명도 증가, Ctrl+Minus: 투명도 감소, Ctrl+0: 리셋")
+        opacity_layout.addWidget(self.opacity_slider)
+        
+        self.opacity_value_label = QLabel(f"{int(self.window_opacity * 100)}%")
+        self.opacity_value_label.setMinimumWidth(35)
+        self.opacity_value_label.setAlignment(Qt.AlignCenter)
+        opacity_layout.addWidget(self.opacity_value_label)
+        
+        opacity_layout.addStretch()
+        options_layout.addLayout(opacity_layout)
+        
+        # 시스템 트레이 옵션
+        tray_layout = QHBoxLayout()
+        self.tray_checkbox = QCheckBox("🔽 시스템 트레이에 상주")
+        self.tray_checkbox.setChecked(self.stay_in_tray)
+        self.tray_checkbox.toggled.connect(self.toggle_system_tray)
+        self.tray_checkbox.setToolTip("체크하면 X로 닫아도 프로그램이 종료되지 않고 시스템 트레이에 남아있습니다")
+        tray_layout.addWidget(self.tray_checkbox)
+        tray_layout.addStretch()
+        options_layout.addLayout(tray_layout)
+        
+        layout.addWidget(self.options_widget)
         
     def setup_autocomplete(self):
         """자동완성 설정 (프롬프트북과 완전히 동일)"""
@@ -274,14 +354,14 @@ class PromptInput(QMainWindow):
                 prompts = [line.strip() for line in f if line.strip()]
             completer = QCompleter(prompts)
             self.prompt_input.set_custom_completer(completer)
-            self.statusBar().showMessage(f"자동완성 목록 로드 완료 ({len(prompts)}개 항목)")
+
         except Exception as e:
             print(f"자동완성 목록 로드 실패: {e}")
             # 기본 자동완성 목록 사용
             default_prompts = ["masterpiece", "best quality", "ultra-detailed", "8k uhd", "highres"]
             completer = QCompleter(default_prompts)
             self.prompt_input.set_custom_completer(completer)
-            self.statusBar().showMessage("기본 자동완성 목록 사용 중")
+
     
     def copy_prompt_to_clipboard(self):
         """프롬프트를 클립보드에 복사 (프롬프트북과 동일)"""
@@ -297,6 +377,21 @@ class PromptInput(QMainWindow):
         # 복사 단축키 (Ctrl+C는 기본 복사와 겹치므로 Ctrl+Shift+C 사용)
         copy_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         copy_shortcut.activated.connect(self.copy_prompt_to_clipboard)
+        
+        # 투명도 조절 단축키
+        opacity_up_shortcut = QShortcut(QKeySequence("Ctrl+Plus"), self)
+        opacity_up_shortcut.activated.connect(self.increase_opacity)
+        
+        opacity_down_shortcut = QShortcut(QKeySequence("Ctrl+Minus"), self)
+        opacity_down_shortcut.activated.connect(self.decrease_opacity)
+        
+        # 투명도 리셋 단축키
+        opacity_reset_shortcut = QShortcut(QKeySequence("Ctrl+0"), self)
+        opacity_reset_shortcut.activated.connect(self.reset_opacity)
+        
+        # 옵션 토글 단축키
+        options_toggle_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
+        options_toggle_shortcut.activated.connect(self.toggle_options)
     
     def toggle_always_on_top(self):
         """창 맨 위에 고정 토글"""
@@ -320,10 +415,159 @@ class PromptInput(QMainWindow):
         # 창을 다시 표시 (플래그 변경 후 필요)
         self.show()
         
-        # 상태 메시지 표시
-        status_text = "활성화" if self.always_on_top else "비활성화"
-        self.statusBar().showMessage(f"창 맨 위에 고정: {status_text}")
-        print(f"[DEBUG] 프롬프트 입력기 - 창 맨 위에 고정: {status_text}")
+        print(f"[DEBUG] 프롬프트 입력기 - 창 맨 위에 고정: {'활성화' if self.always_on_top else '비활성화'}")
+    
+    def toggle_options(self):
+        """옵션 패널 표시/숨김 토글"""
+        self.options_visible = not self.options_visible
+        self.options_widget.setVisible(self.options_visible)
+        
+        # 창 크기 조절
+        if self.options_visible:
+            self.setFixedSize(600, self.expanded_height)
+            self.toggle_button.setText("⚙️ 숨기기")
+        else:
+            self.setFixedSize(600, self.compact_height)
+            self.toggle_button.setText("⚙️ 옵션")
+        
+        print(f"[DEBUG] 프롬프트 입력기 - 옵션 패널: {'표시' if self.options_visible else '숨김'}")
+    
+    def change_opacity(self, value):
+        """윈도우 투명도 변경"""
+        # 슬라이더 값 (30-100)을 투명도 값 (0.3-1.0)으로 변환
+        self.window_opacity = value / 100.0
+        
+        # 윈도우 투명도 적용
+        self.setWindowOpacity(self.window_opacity)
+        
+        # 라벨 업데이트
+        self.opacity_value_label.setText(f"{value}%")
+        
+
+        
+        print(f"[DEBUG] 프롬프트 입력기 - 투명도 변경: {value}%")
+    
+    def increase_opacity(self):
+        """투명도 증가 (더 불투명하게)"""
+        current_value = self.opacity_slider.value()
+        new_value = min(100, current_value + 10)
+        self.opacity_slider.setValue(new_value)
+    
+    def decrease_opacity(self):
+        """투명도 감소 (더 투명하게)"""
+        current_value = self.opacity_slider.value()
+        new_value = max(30, current_value - 10)
+        self.opacity_slider.setValue(new_value)
+    
+    def reset_opacity(self):
+        """투명도 리셋 (100% 불투명)"""
+        self.opacity_slider.setValue(100)
+    
+    def setup_system_tray(self):
+        """시스템 트레이 설정"""
+        # 시스템 트레이 지원 확인
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            print("[DEBUG] 시스템 트레이를 사용할 수 없습니다.")
+            self.tray_checkbox.setEnabled(False)
+            return
+        
+        # 트레이 아이콘 생성
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        # 아이콘 설정
+        try:
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 exe에서는 임시 폴더의 아이콘 사용
+                icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+                if os.path.exists(icon_path):
+                    self.tray_icon.setIcon(QIcon(icon_path))
+                else:
+                    # 기본 아이콘 사용
+                    self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+            else:
+                # 개발 환경에서는 로컬 아이콘 파일 사용
+                if os.path.exists("icon.ico"):
+                    self.tray_icon.setIcon(QIcon("icon.ico"))
+                elif os.path.exists("icon.png"):
+                    self.tray_icon.setIcon(QIcon("icon.png"))
+                else:
+                    # 기본 아이콘 사용
+                    self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+        except Exception as e:
+            print(f"[DEBUG] 트레이 아이콘 설정 실패: {e}")
+            # 기본 아이콘 사용
+            self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+        
+        # 트레이 메뉴 생성
+        tray_menu = QMenu()
+        
+        # 창 보이기/숨기기
+        show_action = QAction("창 보이기", self)
+        show_action.triggered.connect(self.show_window)
+        tray_menu.addAction(show_action)
+        
+        hide_action = QAction("창 숨기기", self)
+        hide_action.triggered.connect(self.hide)
+        tray_menu.addAction(hide_action)
+        
+        tray_menu.addSeparator()
+        
+        # 프롬프트 복사
+        copy_action = QAction("📋 프롬프트 복사", self)
+        copy_action.triggered.connect(self.copy_prompt_to_clipboard)
+        tray_menu.addAction(copy_action)
+        
+        tray_menu.addSeparator()
+        
+        # 종료
+        quit_action = QAction("종료", self)
+        quit_action.triggered.connect(self.quit_application)
+        tray_menu.addAction(quit_action)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.setToolTip("프롬프트 입력기")
+        
+        # 트레이 아이콘 더블클릭 시 창 보이기
+        self.tray_icon.activated.connect(self.tray_icon_activated)
+    
+    def toggle_system_tray(self, checked):
+        """시스템 트레이 상주 토글"""
+        self.stay_in_tray = checked
+        
+        if checked:
+            # 트레이 아이콘 표시
+            self.tray_icon.show()
+        else:
+            # 트레이 아이콘 숨기기
+            self.tray_icon.hide()
+    
+    def tray_icon_activated(self, reason):
+        """트레이 아이콘 클릭 처리"""
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_window()
+    
+    def show_window(self):
+        """창 보이기"""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+    
+    def quit_application(self):
+        """애플리케이션 완전 종료"""
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+        QApplication.quit()
+    
+    def closeEvent(self, event):
+        """창 닫기 이벤트 처리"""
+        if self.stay_in_tray and self.tray_icon.isVisible():
+            # 트레이에 상주하는 경우 창만 숨기기
+            event.ignore()
+            self.hide()
+        else:
+            # 트레이에 상주하지 않는 경우 완전 종료
+            event.accept()
+            self.quit_application()
     
     def disable_all_error_dialogs(self):
         """모든 에러 대화상자를 시스템 레벨에서 차단"""
