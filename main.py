@@ -484,6 +484,8 @@ class ImageView(QGraphicsView):
             border_color = "#555555"
             button_color = "#404040"
             button_hover = "#525252"
+            textedit_bg = "rgba(0, 0, 0, 100)"
+            scrollbar_bg = "rgba(0, 0, 0, 50)"
         else:
             # 테마 색상 사용
             bg_rgb = theme.get('surface', '#3c3c3c').lstrip('#')
@@ -495,6 +497,16 @@ class ImageView(QGraphicsView):
             border_color = theme.get('border', '#555555')
             button_color = theme.get('button', '#404040')
             button_hover = theme.get('button_hover', '#525252')
+            
+            # QTextEdit 배경색을 테마에 맞게 설정
+            textedit_rgb = theme.get('background', '#2b2b2b').lstrip('#')
+            te_r = int(textedit_rgb[0:2], 16)
+            te_g = int(textedit_rgb[2:4], 16)
+            te_b = int(textedit_rgb[4:6], 16)
+            textedit_bg = f"rgba({te_r}, {te_g}, {te_b}, 200)"
+            
+            # 스크롤바 배경색도 테마에 맞게 설정
+            scrollbar_bg = f"rgba({te_r}, {te_g}, {te_b}, 100)"
         
         style = f"""
             QWidget {{
@@ -504,12 +516,13 @@ class ImageView(QGraphicsView):
                 border-radius: 10px;
             }}
             QTextEdit {{
-                background-color: rgba(0, 0, 0, 100);
+                background-color: {textedit_bg};
                 border: 1px solid {border_color};
                 border-radius: 5px;
                 padding: 8px;
                 font-family: 'Consolas', 'Monaco', monospace;
                 font-size: 12px;
+                color: {text_color};
             }}
             QPushButton {{
                 background-color: {button_color};
@@ -528,7 +541,7 @@ class ImageView(QGraphicsView):
                 background-color: transparent;
             }}
             QScrollBar:vertical {{
-                background-color: rgba(0, 0, 0, 50);
+                background-color: {scrollbar_bg};
                 width: 12px;
                 border-radius: 6px;
             }}
@@ -1586,7 +1599,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.3.0"
+    VERSION = "v2.3.6"
     
     @property
     def SAVE_FILE(self):
@@ -1614,15 +1627,15 @@ class PromptBook(QMainWindow):
         },
         "밝은 모드": {
             "background": "#ffffff",
-            "surface": "#f5f5f5",
-            "primary": "#999999", 
-            "text": "#000000",
-            "text_secondary": "#666666",
-            "border": "#d0d0d0",
-            "hover": "#e0e0e0",
-            "selected": "#999999",
-            "button": "#e1e1e1",
-            "button_hover": "#d8d8d8"
+            "surface": "#f8f9fa",
+            "primary": "#007bff", 
+            "text": "#212529",
+            "text_secondary": "#6c757d",
+            "border": "#666666",
+            "hover": "#aaaaaa",
+            "selected": "#007bff",
+            "button": "#f8f9fa",
+            "button_hover": "#aaaaaa"
         },
         "파란 바다": {
             "background": "#1a2332",
@@ -1776,6 +1789,10 @@ class PromptBook(QMainWindow):
         
         # 시스템 트레이 상주 상태 변수
         self.stay_in_tray = False
+        
+        # UI 좌우반전 상태 변수
+        self.ui_flipped = False
+        self.original_splitter_sizes = None  # 원래 스플리터 크기 저장
 
         # UI 관련 변수 초기화
         self.book_list = None
@@ -1960,9 +1977,6 @@ class PromptBook(QMainWindow):
         # 메인 스플리터 생성 (커스텀 스플리터 사용)
         self.main_splitter = CustomSplitter(Qt.Horizontal)  # 커스텀 스플리터 사용
         layout.addWidget(self.main_splitter)
-        
-        # 기본 스플리터 크기 설정
-        self.main_splitter.setSizes([200, 400, 372])
 
         # Left panel
         left_widget = QWidget()
@@ -2030,6 +2044,54 @@ class PromptBook(QMainWindow):
         self.sort_selector = QComboBox()
         self.sort_selector.addItems(["오름차순 정렬", "내림차순 정렬", "커스텀 정렬"])
         self.sort_selector.currentIndexChanged.connect(self.handle_character_sort)
+        
+        # 정렬 콤보박스에 강제 스타일 적용 (밝은 모드 호버 효과 확실히 적용)
+        sort_combo_style = """
+            QComboBox {
+                background-color: #f8f9fa;
+                border: 1px solid #666666;
+                color: #212529;
+                padding: 4px 8px;
+                border-radius: 3px;
+            }
+            QComboBox:hover {
+                background-color: #aaaaaa !important;
+                border: 1px solid #007bff !important;
+            }
+            QComboBox::drop-down {
+                border: none;
+                background-color: transparent;
+            }
+            QComboBox::drop-down:hover {
+                background-color: #aaaaaa !important;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #f8f9fa;
+                border: 1px solid #666666;
+                selection-background-color: #aaaaaa;
+                color: #212529;
+                outline: none;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 4px 8px;
+                border: none;
+                background-color: #f8f9fa;
+                color: #212529;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #aaaaaa !important;
+                color: #212529 !important;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #aaaaaa !important;
+                color: #212529 !important;
+            }
+            QComboBox QAbstractItemView::item:selected:hover {
+                background-color: #aaaaaa !important;
+                color: #212529 !important;
+            }
+        """
+        self.sort_selector.setStyleSheet(sort_combo_style)
         
         self.left_layout.addWidget(QLabel("페이지 리스트"))
         self.left_layout.addWidget(self.search_input)
@@ -2541,7 +2603,8 @@ class PromptBook(QMainWindow):
             "custom_transparency_level": getattr(self, "custom_transparency_level", 0.5),
             "custom_image_brightness": getattr(self, "custom_image_brightness", 50),
             "always_on_top": getattr(self, "always_on_top", False),
-            "stay_in_tray": getattr(self, "stay_in_tray", False)
+            "stay_in_tray": getattr(self, "stay_in_tray", False),
+            "ui_flipped": getattr(self, "ui_flipped", False)
         }
         try:
             with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
@@ -2593,6 +2656,9 @@ class PromptBook(QMainWindow):
                 
                 # 시스템 트레이 상주 상태 복원
                 self.stay_in_tray = settings.get("stay_in_tray", False)
+                
+                # UI 좌우반전 상태 복원
+                self.ui_flipped = settings.get("ui_flipped", False)
             
         except Exception as e:
             print(f"[ERROR] 초기 UI 설정 불러오기 실패: {e}")
@@ -2661,6 +2727,42 @@ class PromptBook(QMainWindow):
                     current_flags = self.windowFlags()
                     self.setWindowFlags(current_flags | Qt.WindowStaysOnTopHint)
                     self.show()
+                
+                # UI 좌우반전 상태 복원
+                saved_ui_flipped = settings.get("ui_flipped", False)
+                if saved_ui_flipped:
+                    # 저장된 상태가 반전이면 UI를 직접 반전시킴
+                    print(f"[DEBUG] UI 좌우반전 상태 복원 시작")
+                    
+                    # 현재 크기를 원래 크기로 저장
+                    if hasattr(self, "main_splitter"):
+                        current_sizes = self.main_splitter.sizes()
+                        self.original_splitter_sizes = current_sizes.copy()
+                        print(f"[DEBUG] UI 복원: 원래 크기 설정 {self.original_splitter_sizes}")
+                        
+                        # 위젯들을 직접 재배치 (반전 상태로)
+                        left_widget = self.main_splitter.widget(0)
+                        middle_widget = self.main_splitter.widget(1)
+                        right_widget = self.main_splitter.widget(2)
+                        
+                        # 스플리터에서 모든 위젯 제거
+                        for i in range(self.main_splitter.count()):
+                            widget = self.main_splitter.widget(0)
+                            widget.setParent(None)
+                        
+                        # 좌우반전: 이미지 | 내용 | 리스트
+                        self.main_splitter.addWidget(right_widget)   # 이미지 (오른쪽 -> 왼쪽)
+                        self.main_splitter.addWidget(middle_widget)  # 내용 (중간 유지)
+                        self.main_splitter.addWidget(left_widget)    # 리스트 (왼쪽 -> 오른쪽)
+                        
+                        # 크기도 반전 (리스트와 이미지 크기 교체)
+                        new_sizes = [current_sizes[2], current_sizes[1], current_sizes[0]]
+                        self.main_splitter.setSizes(new_sizes)
+                        print(f"[DEBUG] UI 복원: 반전 모드 크기 설정 {new_sizes}")
+                    
+                    # 상태 설정
+                    self.ui_flipped = True
+                    print(f"[DEBUG] UI 좌우반전 상태 복원 완료: {self.ui_flipped}")
                         
         except Exception as e:
             print(f"[ERROR] UI 설정 불러오기 실패: {e}")
@@ -5202,6 +5304,47 @@ class PromptBook(QMainWindow):
         """테마를 적용합니다."""
         if theme_name not in self.THEMES:
             return
+        
+        # 커스텀 테마에서 다른 테마로 변경할 때 처리 (current_theme 변경 전에 체크)
+        print(f"[DEBUG] 현재 테마: {getattr(self, 'current_theme', 'None')}, 새 테마: {theme_name}")
+        if hasattr(self, 'current_theme') and self.current_theme == "커스텀 테마" and theme_name != "커스텀 테마":
+            print(f"[DEBUG] 커스텀 테마에서 일반 테마로 변경 감지됨")
+            # 커스텀 테마에서 일반 테마로 변경 시 재시작 확인
+            from PySide6.QtWidgets import QMessageBox
+            
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("프로그램 재시작 필요")
+            msg_box.setText("커스텀 테마에서 일반 테마로 변경하려면 프로그램을 재시작해야 합니다.")
+            msg_box.setInformativeText("지금 재시작하시겠습니까?\n\n재시작하지 않으면 테마 변경이 취소됩니다.")
+            msg_box.setIcon(QMessageBox.Question)
+            
+            restart_btn = msg_box.addButton("재시작", QMessageBox.AcceptRole)
+            cancel_btn = msg_box.addButton("취소", QMessageBox.RejectRole)
+            
+            msg_box.exec()
+            
+            if msg_box.clickedButton() == restart_btn:
+                # 새 테마 설정 저장
+                self.current_theme = theme_name
+                self.custom_background_image = None  # 커스텀 배경 제거
+                self.save_ui_settings()
+                
+                # 프로그램 재시작
+                import sys
+                import os
+                import subprocess
+                
+                script_path = os.path.abspath(sys.argv[0])
+                subprocess.Popen([sys.executable, script_path])
+                self.close()
+                return
+            else:
+                # 취소한 경우 커스텀 테마로 되돌리기
+                for action in self.theme_group.actions():
+                    if "커스텀 테마" in action.text():
+                        action.setChecked(True)
+                        break
+                return
             
         self.current_theme = theme_name
         theme = self.THEMES[theme_name]
@@ -5423,7 +5566,7 @@ class PromptBook(QMainWindow):
         }}
         
         QComboBox:hover {{
-            background-color: {theme['button_hover']};
+            background-color: {theme['hover']};
         }}
         
         QComboBox::drop-down {{
@@ -5441,9 +5584,32 @@ class PromptBook(QMainWindow):
         
         QComboBox QAbstractItemView {{
             background-color: {theme['surface']};
-            border: 1px solid {theme['border']};
+            border: 2px solid {theme['border']};
             color: {theme['text']};
-            selection-background-color: {theme['selected']};
+            selection-background-color: {theme['hover']};
+            outline: none;
+        }}
+        
+        QComboBox QAbstractItemView::item {{
+            padding: 4px 8px;
+            border: none;
+            background-color: {theme['surface']};
+            color: {theme['text']};
+        }}
+        
+        QComboBox QAbstractItemView::item:hover {{
+            background-color: {theme['hover']};
+            color: {theme['text']};
+        }}
+        
+        QComboBox QAbstractItemView::item:selected {{
+            background-color: {theme['hover']};
+            color: {theme['text']};
+        }}
+        
+        QComboBox QAbstractItemView::item:selected:hover {{
+            background-color: {theme['hover']};
+            color: {theme['text']};
         }}
         
         QCheckBox {{
@@ -5636,6 +5802,8 @@ class PromptBook(QMainWindow):
         
         """
         
+
+        
         # 커스텀 테마가 아닐 때만 QGraphicsView 스타일 추가
         if theme_name != "커스텀 테마":
             style += f"""
@@ -5815,6 +5983,107 @@ class PromptBook(QMainWindow):
         # EXIF 오버레이 스타일 업데이트
         if hasattr(self, 'image_view') and hasattr(self.image_view, 'update_exif_overlay_style'):
             self.image_view.update_exif_overlay_style()
+        
+        # 커스텀 테마가 아닐 때 콤보박스 스타일 초기화 (커스텀 투명도 스타일 제거)
+        if theme_name != "커스텀 테마":
+            try:
+                # 모든 QComboBox 찾아서 커스텀 투명도 스타일 제거하고 새 테마 스타일 적용
+                combos = self.findChildren(QComboBox)
+                for combo in combos:
+                    combo.setStyleSheet("")  # 기존 스타일 완전 제거
+                    
+                # 새 테마의 콤보박스 스타일 적용
+                combo_style = f"""
+                    QComboBox {{
+                        background-color: {theme['surface']};
+                        border: 1px solid {theme['border']};
+                        color: {theme['text']};
+                        padding: 4px 8px;
+                        border-radius: 3px;
+                    }}
+                    QComboBox:hover {{
+                        background-color: {theme['hover']};
+                        border: 1px solid {theme['primary']};
+                    }}
+                    QComboBox::drop-down {{
+                        border: none;
+                        background-color: transparent;
+                    }}
+                    QComboBox::drop-down:hover {{
+                        background-color: {theme['hover']};
+                    }}
+                    QComboBox QAbstractItemView {{
+                        background-color: {theme['surface']};
+                        border: 1px solid {theme['border']};
+                        selection-background-color: {theme['hover']};
+                        color: {theme['text']};
+                        outline: none;
+                    }}
+                    QComboBox QAbstractItemView::item {{
+                        padding: 4px 8px;
+                        border: none;
+                        background-color: {theme['surface']};
+                        color: {theme['text']};
+                    }}
+                    QComboBox QAbstractItemView::item:hover {{
+                        background-color: {theme['hover']};
+                        color: {theme['text']};
+                    }}
+                    QComboBox QAbstractItemView::item:selected {{
+                        background-color: {theme['hover']};
+                        color: {theme['text']};
+                    }}
+                    QComboBox QAbstractItemView::item:selected:hover {{
+                        background-color: {theme['hover']};
+                        color: {theme['text']};
+                    }}
+                """
+                
+                for combo in combos:
+                    combo.setStyleSheet(combo_style)
+                    combo.update()  # 강제 업데이트
+                    combo.repaint()  # 강제 다시 그리기
+                
+                # 정렬 콤보박스에 특별히 강제 적용
+                if hasattr(self, 'sort_selector'):
+                    self.sort_selector.setStyleSheet(combo_style)
+                    self.sort_selector.update()
+                    self.sort_selector.repaint()
+                    print(f"[INFO] 정렬 콤보박스에 강제 스타일 적용")
+                    
+                if hasattr(self, 'book_sort_selector'):
+                    self.book_sort_selector.setStyleSheet(combo_style)
+                    self.book_sort_selector.update()
+                    self.book_sort_selector.repaint()
+                    print(f"[INFO] 북 정렬 콤보박스에 강제 스타일 적용")
+                
+                # 북과 페이지 리스트에 강제 호버 스타일 적용
+                list_style = f"""
+                    QListWidget::item:hover {{
+                        background-color: {theme['hover']} !important;
+                        color: {theme['text']} !important;
+                    }}
+                    QListWidget::item:selected {{
+                        background-color: {theme['selected']};
+                        color: {theme['text']};
+                    }}
+                """
+                
+                if hasattr(self, 'book_list'):
+                    self.book_list.setStyleSheet(list_style)
+                    self.book_list.update()
+                    self.book_list.repaint()
+                    print(f"[INFO] 북 리스트에 강제 호버 스타일 적용")
+                    
+                if hasattr(self, 'char_list'):
+                    self.char_list.setStyleSheet(list_style)
+                    self.char_list.update()
+                    self.char_list.repaint()
+                    print(f"[INFO] 페이지 리스트에 강제 호버 스타일 적용")
+                    
+                print(f"[INFO] {len(combos)}개 콤보박스에 새 테마 스타일 적용 완료")
+            except Exception as e:
+                print(f"[ERROR] 콤보박스 스타일 적용 실패: {e}")
         
     def enable_button_mouse_tracking(self):
         """모든 QPushButton에 마우스 추적을 활성화하여 hover 효과가 제대로 작동하도록 합니다."""
@@ -7339,6 +7608,72 @@ class PromptBook(QMainWindow):
         # 상태 메시지 표시
         status_text = "활성화" if self.stay_in_tray else "비활성화"
         print(f"[DEBUG] 프롬프트북 - 시스템 트레이 상주: {status_text}")
+    
+    def toggle_ui_flip(self):
+        """UI 좌우반전 토글"""
+        print(f"\n[DEBUG] ===== UI 좌우반전 시작 =====")
+        
+        current_sizes = self.main_splitter.sizes()
+        print(f"[DEBUG] 현재 스플리터 크기: {current_sizes}")
+        
+        # 위젯들을 임시로 제거
+        print(f"[DEBUG] 위젯 개수: {self.main_splitter.count()}")
+        left_widget = self.main_splitter.widget(0)
+        middle_widget = self.main_splitter.widget(1)
+        right_widget = self.main_splitter.widget(2)
+        print(f"[DEBUG] 위젯 정보 - 왼쪽: {type(left_widget).__name__}, 중간: {type(middle_widget).__name__}, 오른쪽: {type(right_widget).__name__}")
+        
+        # 스플리터에서 모든 위젯 제거
+        print(f"[DEBUG] 모든 위젯 제거 중...")
+        for i in range(self.main_splitter.count()):
+            widget = self.main_splitter.widget(0)
+            widget.setParent(None)
+        print(f"[DEBUG] 위젯 제거 완료, 남은 위젯 개수: {self.main_splitter.count()}")
+        
+        # 상태 토글
+        self.ui_flipped = not getattr(self, 'ui_flipped', False)
+        print(f"[DEBUG] UI 반전 상태 토글: {self.ui_flipped}")
+        
+        # 위젯 순서 변경 (항상 좌우 교체)
+        print(f"[DEBUG] 🔄 위젯 순서 교체 중...")
+        self.main_splitter.addWidget(right_widget)   # 오른쪽 → 왼쪽
+        self.main_splitter.addWidget(middle_widget)  # 중간 유지
+        self.main_splitter.addWidget(left_widget)    # 왼쪽 → 오른쪽
+        print(f"[DEBUG] 위젯 순서 교체 완료")
+        
+        # Qt 이벤트 처리 강제 실행
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        
+        # 스플리터 레이아웃 강제 업데이트
+        self.main_splitter.update()
+        self.main_splitter.repaint()
+        QApplication.processEvents()
+        
+        # 크기도 좌우 교체 (항상 첫 번째와 세 번째 교체)
+        desired_sizes = [current_sizes[2], current_sizes[1], current_sizes[0]]
+        print(f"[DEBUG] 원하는 크기: {current_sizes} → {desired_sizes}")
+        
+        # Qt 버그 대응: 반대로 설정
+        reversed_sizes = [desired_sizes[2], desired_sizes[1], desired_sizes[0]]
+        print(f"[DEBUG] Qt 버그 대응: 반대로 설정 {reversed_sizes}")
+        
+        # 여러 번 시도해서 크기 설정
+        for attempt in range(3):
+            self.main_splitter.setSizes(reversed_sizes)
+            QApplication.processEvents()
+            actual_sizes = self.main_splitter.sizes()
+            print(f"[DEBUG] 시도 {attempt + 1}: 설정 {reversed_sizes} → 실제 {actual_sizes}")
+            if actual_sizes == desired_sizes:
+                print(f"[DEBUG] 🎉 성공! 원하는 크기 달성: {actual_sizes}")
+                break
+        
+        print(f"[DEBUG] ✅ UI 좌우반전 완료 - 최종 적용된 크기: {actual_sizes}")
+        
+        # 설정 저장
+        print(f"[DEBUG] 설정 저장 중...")
+        self.save_ui_settings()
+        print(f"[DEBUG] ===== UI 좌우반전 완료 =====\n")
 
     def on_tray_icon_activated(self, reason):
         """트레이 아이콘 클릭 이벤트 처리"""
@@ -7461,6 +7796,12 @@ class PromptBook(QMainWindow):
             custom_transparency_action = QAction("🎨 커스텀 테마 투명도 조절", self)
             custom_transparency_action.triggered.connect(self.adjust_custom_theme_transparency)
             options_menu.addAction(custom_transparency_action)
+        
+        # UI 좌우반전
+        ui_flip_action = QAction("🔄 UI 좌우반전", self)
+        ui_flip_action.triggered.connect(self.toggle_ui_flip)
+        ui_flip_action.setStatusTip("UI 레이아웃을 좌우로 반전시킵니다 (이미지 | 내용 | 리스트)")
+        options_menu.addAction(ui_flip_action)
         
         # 시스템 트레이에 상주
         tray_action = QAction("🔽 시스템 트레이에 상주 (X로 닫아도 종료되지 않음)", self)
