@@ -196,7 +196,7 @@ class CustomTextEdit(QTextEdit):
 class PromptInput(QMainWindow):
     """프롬프트 입력기 메인 윈도우"""
     
-    VERSION = "v1.2"
+    VERSION = "v1.5"
     
     def __init__(self):
         super().__init__()
@@ -271,9 +271,25 @@ class PromptInput(QMainWindow):
         self.copy_button = QPushButton("📋 복사")
         self.copy_button.clicked.connect(self.copy_prompt_to_clipboard)
         self.copy_button.setMinimumHeight(28)
-        self.copy_button.setMaximumWidth(80)
+        self.copy_button.setMaximumWidth(70)
         self.copy_button.setToolTip("프롬프트를 클립보드에 복사합니다 (Ctrl+Shift+C)")
         main_button_layout.addWidget(self.copy_button)
+        
+        # 저장 버튼
+        self.save_button = QPushButton("💾 저장")
+        self.save_button.clicked.connect(self.save_to_txt_file)
+        self.save_button.setMinimumHeight(28)
+        self.save_button.setMaximumWidth(70)
+        self.save_button.setToolTip("프롬프트를 txt 파일로 저장합니다 (Ctrl+S)")
+        main_button_layout.addWidget(self.save_button)
+        
+        # 불러오기 버튼
+        self.load_button = QPushButton("📂 열기")
+        self.load_button.clicked.connect(self.load_from_txt_file)
+        self.load_button.setMinimumHeight(28)
+        self.load_button.setMaximumWidth(70)
+        self.load_button.setToolTip("txt 파일에서 프롬프트를 불러옵니다 (Ctrl+O)")
+        main_button_layout.addWidget(self.load_button)
         
         # 옵션 토글 버튼
         self.toggle_button = QPushButton("⚙️ 옵션")
@@ -281,8 +297,8 @@ class PromptInput(QMainWindow):
         self.toggle_button.setChecked(self.options_visible)
         self.toggle_button.clicked.connect(self.toggle_options)
         self.toggle_button.setMinimumHeight(28)
-        self.toggle_button.setMaximumWidth(80)
-        self.toggle_button.setToolTip("고급 옵션을 표시/숨김합니다 (Ctrl+O)")
+        self.toggle_button.setMaximumWidth(70)
+        self.toggle_button.setToolTip("고급 옵션을 표시/숨김합니다 (Ctrl+Alt+O)")
         main_button_layout.addWidget(self.toggle_button)
         
         # 여백 추가
@@ -368,6 +384,68 @@ class PromptInput(QMainWindow):
         QApplication.clipboard().setText(self.prompt_input.toPlainText())
         QToolTip.showText(self.copy_button.mapToGlobal(self.copy_button.rect().center()), "프롬프트가 복사되었습니다.")
     
+    def save_to_txt_file(self):
+        """프롬프트를 txt 파일로 저장"""
+        try:
+            text = self.prompt_input.toPlainText().strip()
+            if not text:
+                QToolTip.showText(self.save_button.mapToGlobal(self.save_button.rect().center()), "저장할 내용이 없습니다.")
+                return
+            
+            # 파일 저장 대화상자
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "프롬프트 저장",
+                "prompt.txt",
+                "텍스트 파일 (*.txt);;모든 파일 (*.*)"
+            )
+            
+            if file_path:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(text)
+                QToolTip.showText(self.save_button.mapToGlobal(self.save_button.rect().center()), "파일이 저장되었습니다.")
+                print(f"[DEBUG] 프롬프트 저장 완료: {file_path}")
+                
+        except Exception as e:
+            QToolTip.showText(self.save_button.mapToGlobal(self.save_button.rect().center()), f"저장 실패: {str(e)}")
+            print(f"[DEBUG] 프롬프트 저장 실패: {e}")
+    
+    def load_from_txt_file(self):
+        """txt 파일에서 프롬프트 불러오기"""
+        try:
+            # 파일 열기 대화상자
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "프롬프트 불러오기",
+                "",
+                "텍스트 파일 (*.txt);;모든 파일 (*.*)"
+            )
+            
+            if file_path:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # 현재 내용이 있으면 확인
+                current_text = self.prompt_input.toPlainText().strip()
+                if current_text:
+                    reply = QMessageBox.question(
+                        self,
+                        "프롬프트 불러오기",
+                        "현재 내용을 덮어쓰시겠습니까?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No
+                    )
+                    if reply != QMessageBox.Yes:
+                        return
+                
+                self.prompt_input.setPlainText(content)
+                QToolTip.showText(self.load_button.mapToGlobal(self.load_button.rect().center()), "파일이 불러와졌습니다.")
+                print(f"[DEBUG] 프롬프트 불러오기 완료: {file_path}")
+                
+        except Exception as e:
+            QToolTip.showText(self.load_button.mapToGlobal(self.load_button.rect().center()), f"불러오기 실패: {str(e)}")
+            print(f"[DEBUG] 프롬프트 불러오기 실패: {e}")
+    
     def setup_shortcuts(self):
         """단축키 설정"""
         # 창 고정 단축키 (Ctrl+T)
@@ -377,6 +455,14 @@ class PromptInput(QMainWindow):
         # 복사 단축키 (Ctrl+C는 기본 복사와 겹치므로 Ctrl+Shift+C 사용)
         copy_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         copy_shortcut.activated.connect(self.copy_prompt_to_clipboard)
+        
+        # 파일 저장 단축키
+        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        save_shortcut.activated.connect(self.save_to_txt_file)
+        
+        # 파일 열기 단축키
+        open_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
+        open_shortcut.activated.connect(self.load_from_txt_file)
         
         # 투명도 조절 단축키
         opacity_up_shortcut = QShortcut(QKeySequence("Ctrl+Plus"), self)
@@ -389,8 +475,8 @@ class PromptInput(QMainWindow):
         opacity_reset_shortcut = QShortcut(QKeySequence("Ctrl+0"), self)
         opacity_reset_shortcut.activated.connect(self.reset_opacity)
         
-        # 옵션 토글 단축키
-        options_toggle_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
+        # 옵션 토글 단축키 (Ctrl+O가 파일 열기와 겹치므로 변경)
+        options_toggle_shortcut = QShortcut(QKeySequence("Ctrl+Alt+O"), self)
         options_toggle_shortcut.activated.connect(self.toggle_options)
     
     def toggle_always_on_top(self):
@@ -516,6 +602,16 @@ class PromptInput(QMainWindow):
         copy_action = QAction("📋 프롬프트 복사", self)
         copy_action.triggered.connect(self.copy_prompt_to_clipboard)
         tray_menu.addAction(copy_action)
+        
+        # 파일 저장
+        save_action = QAction("💾 파일 저장", self)
+        save_action.triggered.connect(self.save_to_txt_file)
+        tray_menu.addAction(save_action)
+        
+        # 파일 불러오기
+        load_action = QAction("📂 파일 열기", self)
+        load_action.triggered.connect(self.load_from_txt_file)
+        tray_menu.addAction(load_action)
         
         tray_menu.addSeparator()
         
