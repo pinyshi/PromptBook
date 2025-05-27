@@ -8900,6 +8900,55 @@ class PromptBook(QMainWindow):
 <li>실시간 미리보기 지원</li>
 </ol>
 
+<h3>UI 좌우반전</h3>
+<p><strong>레이아웃 변경:</strong></p>
+<ol>
+<li>☰ 메뉴 → <strong>"옵션"</strong> → <strong>"🔄 UI 좌우반전"</strong></li>
+<li>패널 순서가 좌우로 반전됨</li>
+<li><strong>기본:</strong> 북 리스트 | 페이지 리스트 | 편집 영역</li>
+<li><strong>반전:</strong> 편집 영역 | 페이지 리스트 | 북 리스트</li>
+</ol>
+
+<p><strong>사용 시나리오:</strong></p>
+<ul>
+<li><strong>왼손잡이 사용자:</strong> 마우스 동선 최적화</li>
+<li><strong>멀티 모니터:</strong> 모니터 배치에 맞는 레이아웃</li>
+<li><strong>개인 선호:</strong> 편집 영역을 왼쪽에 배치</li>
+<li><strong>작업 효율:</strong> 자주 사용하는 영역을 가까이</li>
+</ul>
+
+<h3>시스템 트레이 상주</h3>
+<p><strong>트레이 상주 설정:</strong></p>
+<ol>
+<li>☰ 메뉴 → <strong>"옵션"</strong> → <strong>"🔽 시스템 트레이에 상주"</strong></li>
+<li>체크 표시로 활성화/비활성화</li>
+<li>활성화 시 X 버튼으로 닫아도 프로그램 종료되지 않음</li>
+<li>시스템 트레이에 프롬프트북 아이콘 표시</li>
+</ol>
+
+<p><strong>트레이 아이콘 사용법:</strong></p>
+<ul>
+<li><strong>좌클릭:</strong> 창 표시/숨김 토글</li>
+<li><strong>우클릭:</strong> 컨텍스트 메뉴 (창 표시, 완전 종료)</li>
+<li><strong>더블클릭:</strong> 창 복원 및 포커스</li>
+</ul>
+
+<p><strong>활용 시나리오:</strong></p>
+<ul>
+<li><strong>백그라운드 작업:</strong> 다른 작업 중 빠른 메모</li>
+<li><strong>메모리 절약:</strong> 창 숨김으로 화면 공간 확보</li>
+<li><strong>빠른 접근:</strong> 트레이에서 즉시 접근</li>
+<li><strong>멀티태스킹:</strong> 여러 프로그램과 함께 사용</li>
+</ul>
+
+<h3>창 맨 위에 고정</h3>
+<p><strong>항상 위 표시:</strong></p>
+<ol>
+<li>☰ 메뉴 → <strong>"옵션"</strong> → <strong>"📌 창 맨 위에 고정"</strong></li>
+<li>체크 시 다른 창 위에 항상 표시</li>
+<li>다른 프로그램 사용 중에도 프롬프트북이 보임</li>
+</ol>
+
 <p><strong>💡 투명도 사용 팁:</strong></p>
 <ul>
 <li>다른 프로그램과 함께 사용할 때 유용</li>
@@ -8907,8 +8956,6 @@ class PromptBook(QMainWindow):
 <li>미니멀한 UI 선호 시</li>
 <li>멀티 모니터 환경에서 효과적</li>
 </ul>
-
-
 
 <h3>성능 최적화 팁</h3>
 <p><strong>투명도 관련:</strong></p>
@@ -8918,47 +8965,65 @@ class PromptBook(QMainWindow):
 <li>그래픽 드라이버 최신 버전 권장</li>
 </ul>
 
- <p><strong>이미지 관리:</strong></p>
- <ul>
- <li>너무 큰 이미지 파일은 성능에 영향</li>
- <li>적절한 해상도 사용 권장</li>
- </ul>
+<p><strong>이미지 관리:</strong></p>
+<ul>
+<li>너무 큰 이미지 파일은 성능에 영향</li>
+<li>적절한 해상도 사용 권장</li>
+</ul>
                 """,
                 "children": {}
             },
-                         "💾 백업 및 복원": {
+                         "💾 개별 북 저장": {
                  "content": """
- <h2>💾 백업 및 복원</h2>
+ <h2>💾 개별 북 저장 및 불러오기</h2>
  
- <h3>북 저장하기 (백업)</h3>
+ <h3>북 저장하기</h3>
+ <p><strong>개별 북 백업:</strong></p>
  <ol>
  <li>저장할 북 선택</li>
- <li>상단 <strong>☰ 메뉴</strong> → <strong>"선택된 북 저장하기"</strong> 클릭</li>
+ <li>상단 <strong>☰ 메뉴</strong> → <strong>"파일"</strong> → <strong>"💾 선택된 북 저장하기"</strong></li>
  <li>저장 위치와 파일명 지정</li>
  <li><strong>".zip"</strong> 파일로 저장됨</li>
  </ol>
  
  <p><strong>저장 내용:</strong></p>
  <ul>
- <li>북의 모든 페이지 데이터</li>
+ <li>선택된 북의 모든 페이지 데이터</li>
  <li>첨부된 모든 이미지 파일</li>
  <li>북 설정 (이모지, 즐겨찾기 등)</li>
  <li>페이지 순서 정보</li>
  </ul>
  
- <h3>북 불러오기 (복원)</h3>
+ <h3>북 불러오기</h3>
+ <p><strong>저장된 북 복원:</strong></p>
  <ol>
- <li>상단 <strong>☰ 메뉴</strong> → <strong>"저장된 북 불러오기"</strong> 클릭</li>
+ <li>상단 <strong>☰ 메뉴</strong> → <strong>"파일"</strong> → <strong>"📂 저장된 북 불러오기"</strong></li>
  <li>저장된 <strong>".zip"</strong> 파일 선택</li>
  <li><strong>"열기"</strong> 클릭</li>
- <li>자동으로 북과 페이지들이 복원됨</li>
+ <li>자동으로 북과 페이지들이 추가됨</li>
  </ol>
  
- <p><strong>복원 특징:</strong></p>
+ <p><strong>불러오기 특징:</strong></p>
  <ul>
  <li>기존 북과 이름이 같으면 자동으로 번호 추가</li>
  <li>모든 이미지 파일도 함께 복원</li>
  <li>페이지 순서와 설정 모두 유지</li>
+ <li>기존 데이터에 추가되는 방식</li>
+ </ul>
+ 
+ <h3>활용 시나리오</h3>
+ <p><strong>북 공유:</strong></p>
+ <ul>
+ <li>완성된 프로젝트를 다른 사용자와 공유</li>
+ <li>팀 작업 시 개별 북 교환</li>
+ <li>템플릿 북 배포</li>
+ </ul>
+ 
+ <p><strong>백업 및 이동:</strong></p>
+ <ul>
+ <li>중요한 북만 선별적으로 백업</li>
+ <li>다른 컴퓨터로 특정 북 이동</li>
+ <li>프로젝트별 아카이브 생성</li>
  </ul>
  
  <h3>자동 저장 기능</h3>
@@ -8967,21 +9032,6 @@ class PromptBook(QMainWindow):
  <li>페이지 내용 편집 시 자동으로 저장됨</li>
  <li>프로그램 종료 시에도 자동 저장</li>
  <li><strong>Ctrl+S</strong>로 수동 저장 가능</li>
- </ul>
- 
- <h3>백업 전략 권장사항</h3>
- <p><strong>정기 백업:</strong></p>
- <ul>
- <li>중요한 작업 후 즉시 북 저장하기 사용</li>
- <li>주기적으로 전체 북 백업</li>
- <li>버전별로 파일명에 날짜 포함 권장</li>
- </ul>
- 
- <p><strong>백업 파일 관리:</strong></p>
- <ul>
- <li>클라우드 저장소에 백업 파일 보관</li>
- <li>여러 위치에 중복 백업 권장</li>
- <li>정기적으로 복원 테스트 수행</li>
  </ul>
  
  <h3>데이터 파일 위치</h3>
@@ -8994,6 +9044,251 @@ class PromptBook(QMainWindow):
                  """,
                  "children": {}
              },
+            "🖼️ EXIF/프롬프트 뷰어": {
+                "content": """
+<h2>🖼️ EXIF/프롬프트 뷰어</h2>
+
+<h3>EXIF 정보 보기</h3>
+<p><strong>사용 방법:</strong></p>
+<ol>
+<li>페이지에 이미지를 추가</li>
+<li>이미지 위에 <strong>마우스 호버</strong></li>
+<li>EXIF 정보가 오버레이로 표시됨</li>
+</ol>
+
+<p><strong>표시되는 정보:</strong></p>
+<ul>
+<li><strong>파일 정보:</strong> 파일명, 크기, 해상도</li>
+<li><strong>카메라 정보:</strong> 카메라 모델, 렌즈 정보</li>
+<li><strong>촬영 설정:</strong> ISO, 셔터 속도, 조리개</li>
+<li><strong>AI 프롬프트:</strong> 이미지에 포함된 AI 생성 정보</li>
+</ul>
+
+<h3>AI 프롬프트 추출</h3>
+<p><strong>지원하는 AI 도구:</strong></p>
+<ul>
+<li><strong>NovelAI:</strong> 프롬프트와 네거티브 프롬프트 추출</li>
+<li><strong>Stable Diffusion:</strong> 생성 파라미터 추출</li>
+<li><strong>기타 AI 도구:</strong> 메타데이터에서 프롬프트 정보 추출</li>
+</ul>
+
+<p><strong>프롬프트 활용:</strong></p>
+<ol>
+<li>EXIF 오버레이에서 프롬프트 텍스트 확인</li>
+<li>원하는 텍스트를 <strong>드래그하여 선택</strong></li>
+<li><strong>우클릭</strong> → <strong>"선택된 텍스트 복사"</strong></li>
+<li>또는 <strong>"프롬프트를 입력창에 붙여넣기"</strong> 선택</li>
+<li>페이지 편집 영역에 자동으로 붙여넣어짐</li>
+</ol>
+
+<h3>EXIF 뷰어 설정</h3>
+<p><strong>표시/숨김 토글:</strong></p>
+<ul>
+<li>이미지 하단의 <strong>"EXIF 정보 표시"</strong> 체크박스</li>
+<li>체크 해제 시 마우스 호버해도 EXIF 정보 표시 안 됨</li>
+<li>설정은 자동으로 저장됨</li>
+</ul>
+
+<p><strong>💡 활용 팁:</strong></p>
+<ul>
+<li>AI 생성 이미지의 프롬프트를 쉽게 재사용 가능</li>
+<li>이미지 품질 분석에 유용한 EXIF 정보 확인</li>
+<li>프롬프트 연구 및 학습에 활용</li>
+</ul>
+                """,
+                "children": {}
+            },
+                         "📋 복사/붙여넣기": {
+                "content": """
+<h2>📋 복사/붙여넣기 - 북 간 페이지 이동</h2>
+
+<p><strong>🎯 핵심 기능:</strong> 페이지를 다른 북으로 복사하거나 이동할 수 있습니다!</p>
+
+<h3>페이지 복사하기</h3>
+<p><strong>단일 페이지 복사:</strong></p>
+<ol>
+<li>복사할 페이지 선택</li>
+<li><strong>Ctrl+C</strong> 또는 우클릭 → <strong>"복사"</strong></li>
+<li>페이지가 클립보드에 복사됨</li>
+</ol>
+
+<p><strong>다중 페이지 복사:</strong></p>
+<ol>
+<li><strong>Ctrl+클릭</strong>으로 여러 페이지 선택</li>
+<li><strong>Ctrl+C</strong></li>
+<li>선택된 모든 페이지가 클립보드에 복사됨</li>
+</ol>
+
+<h3>페이지 잘라내기 (이동)</h3>
+<p><strong>사용 방법:</strong></p>
+<ol>
+<li>이동할 페이지 선택</li>
+<li><strong>Ctrl+X</strong> 또는 우클릭 → <strong>"잘라내기"</strong></li>
+<li>페이지가 클립보드로 이동 (원본에서 제거됨)</li>
+</ol>
+
+<h3>🔥 북 간 페이지 붙여넣기 (핵심!)</h3>
+<p><strong>⚠️ 중요:</strong> 붙여넣기는 반드시 <strong>북을 선택한 상태</strong>에서 해야 합니다!</p>
+
+<p><strong>올바른 방법:</strong></p>
+<ol>
+<li>원본 북에서 페이지 복사/잘라내기 (<strong>Ctrl+C</strong> 또는 <strong>Ctrl+X</strong>)</li>
+<li><strong>왼쪽 북 리스트에서 대상 북 클릭</strong> (북 선택)</li>
+<li>북이 선택되면 가운데 페이지 리스트가 나타남</li>
+<li>페이지 리스트 영역에서 <strong>Ctrl+V</strong> 또는 우클릭 → <strong>"붙여넣기"</strong></li>
+<li>페이지가 대상 북으로 이동/복사됨</li>
+</ol>
+
+<p><strong>❌ 작동하지 않는 경우:</strong></p>
+<ul>
+<li>북을 선택하지 않은 상태에서 붙여넣기</li>
+<li>페이지 리스트가 비어있는 상태에서 붙여넣기</li>
+<li>다른 영역(편집 영역 등)에서 붙여넣기</li>
+</ul>
+
+<h3>같은 북 내 복제</h3>
+<p><strong>같은 북에서 페이지 복제:</strong></p>
+<ol>
+<li>복사할 페이지 선택</li>
+<li><strong>Ctrl+C</strong></li>
+<li>같은 북에서 <strong>Ctrl+V</strong></li>
+<li>페이지가 복제되어 추가됨</li>
+</ol>
+
+<h3>복사 vs 이동</h3>
+<p><strong>복사 (Ctrl+C):</strong></p>
+<ul>
+<li>원본 페이지 유지</li>
+<li>대상 북에 복제본 생성</li>
+<li>백업이나 공유 목적에 적합</li>
+</ul>
+
+<p><strong>이동 (Ctrl+X):</strong></p>
+<ul>
+<li>원본 페이지 제거</li>
+<li>대상 북으로 완전 이동</li>
+<li>페이지 정리나 재구성에 적합</li>
+</ul>
+
+<h3>이미지 파일 자동 처리</h3>
+<ul>
+<li>페이지에 첨부된 이미지도 함께 복사/이동됨</li>
+<li>이미지 파일명 중복 시 자동으로 번호 추가</li>
+<li>원본 이미지 파일은 안전하게 보존됨</li>
+</ul>
+
+<h3>활용 시나리오</h3>
+<p><strong>프로젝트 간 자료 이동:</strong></p>
+<ul>
+<li><strong>캐릭터 설정</strong>을 "임시" 북에서 "메인 프로젝트" 북으로 이동</li>
+<li><strong>공통 설정</strong>을 여러 프로젝트 북에 복사</li>
+<li><strong>완성된 페이지</strong>를 "작업중" 북에서 "완료" 북으로 이동</li>
+</ul>
+
+<p><strong>작업 효율성:</strong></p>
+<ul>
+<li>템플릿 페이지를 여러 북에서 재사용</li>
+<li>실험적 수정을 위한 임시 복사</li>
+<li>프로젝트 단계별 페이지 이동</li>
+</ul>
+
+<p><strong>💡 핵심 팁:</strong></p>
+<ul>
+<li><strong>반드시 북을 먼저 선택!</strong> 페이지 리스트가 보여야 붙여넣기 가능</li>
+<li>대량 페이지 이동 시 잘라내기(Ctrl+X) 사용</li>
+<li>백업 목적으로는 복사(Ctrl+C) 사용</li>
+<li>다중 선택으로 여러 페이지 한 번에 이동 가능</li>
+</ul>
+                """,
+                "children": {}
+            },
+            "💾 백업 및 복원": {
+                "content": """
+<h2>💾 백업 및 복원</h2>
+
+<h3>전체 북 리스트 백업</h3>
+<p><strong>백업 방법:</strong></p>
+<ol>
+<li>상단 <strong>☰ 메뉴</strong> → <strong>"파일"</strong> → <strong>"💾 백업"</strong></li>
+<li><strong>"📦 현재 북 리스트 백업"</strong> 선택</li>
+<li>저장 위치와 파일명 지정</li>
+<li><strong>".backup"</strong> 파일로 저장됨</li>
+</ol>
+
+<p><strong>백업 내용:</strong></p>
+<ul>
+<li><strong>모든 북과 페이지:</strong> 전체 데이터베이스</li>
+<li><strong>이미지 파일:</strong> 첨부된 모든 이미지</li>
+<li><strong>설정 정보:</strong> 북/페이지 순서, 즐겨찾기, 잠금 상태</li>
+<li><strong>UI 설정:</strong> 테마, 창 크기, 패널 비율</li>
+</ul>
+
+<h3>백업에서 복원</h3>
+<p><strong>복원 방법:</strong></p>
+<ol>
+<li>상단 <strong>☰ 메뉴</strong> → <strong>"파일"</strong> → <strong>"💾 백업"</strong></li>
+<li><strong>"📥 백업된 북 리스트로 복구"</strong> 선택</li>
+<li>백업 파일 목록에서 원하는 파일 선택</li>
+<li><strong>"복구"</strong> 버튼 클릭</li>
+<li>확인 대화상자에서 <strong>"예"</strong> 선택</li>
+</ol>
+
+<p><strong>복원 특징:</strong></p>
+<ul>
+<li><strong>완전 복원:</strong> 현재 데이터를 백업 시점으로 완전 교체</li>
+<li><strong>이미지 복원:</strong> 모든 이미지 파일도 함께 복원</li>
+<li><strong>설정 복원:</strong> UI 설정과 사용자 환경도 복원</li>
+<li><strong>자동 재시작:</strong> 복원 후 프로그램 자동 재시작</li>
+</ul>
+
+<h3>백업 파일 관리</h3>
+<p><strong>백업 파일 위치:</strong></p>
+<ul>
+<li>프로그램 폴더 내 <strong>"backups"</strong> 폴더</li>
+<li>파일명에 날짜와 시간 자동 포함</li>
+<li>예: <strong>"backup_2024-01-15_14-30-25.backup"</strong></li>
+</ul>
+
+<p><strong>백업 파일 삭제:</strong></p>
+<ol>
+<li>복원 대화상자에서 삭제할 파일 선택</li>
+<li><strong>"삭제"</strong> 버튼 클릭</li>
+<li>확인 후 백업 파일 영구 삭제</li>
+</ol>
+
+<h3>백업 전략 권장사항</h3>
+<p><strong>정기 백업:</strong></p>
+<ul>
+<li>중요한 작업 완료 후 즉시 백업</li>
+<li>주간/월간 정기 백업 스케줄 설정</li>
+<li>대규모 수정 작업 전 사전 백업</li>
+</ul>
+
+<p><strong>백업 파일 보관:</strong></p>
+<ul>
+<li>클라우드 저장소에 백업 파일 업로드</li>
+<li>외부 저장장치에 추가 백업</li>
+<li>여러 시점의 백업 파일 보관</li>
+</ul>
+
+<p><strong>⚠️ 주의사항:</strong></p>
+<ul>
+<li>복원 시 현재 데이터가 완전히 교체됨</li>
+<li>복원 전 현재 상태 백업 권장</li>
+<li>백업 파일 손상 시 복원 불가</li>
+<li>정기적인 백업 파일 무결성 확인 필요</li>
+</ul>
+
+<h3>개별 북 백업과의 차이점</h3>
+<p><strong>전체 백업 vs 개별 북 저장:</strong></p>
+<ul>
+<li><strong>전체 백업:</strong> 모든 북 + UI 설정 + 전체 환경</li>
+<li><strong>개별 북 저장:</strong> 선택된 북만 .zip 파일로 저장</li>
+<li><strong>용도:</strong> 전체 백업은 시스템 복원, 개별 저장은 공유/이동</li>
+</ul>
+                """,
+                "children": {}
+            },
             "🔧 고급 기능": {
                 "content": """
 <h2>🔧 고급 기능</h2>
