@@ -6,6 +6,8 @@ from promptbook_utils import PromptBookUtils
 from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
 import os, json, csv, shutil, sys, re
+import zipfile, datetime, hashlib, base64
+from cryptography.fernet import Fernet
 
 # EXIF 정보 읽기를 위한 모듈
 try:
@@ -31,6 +33,13 @@ def get_images_directory():
     images_dir = os.path.join(app_dir, "images")
     os.makedirs(images_dir, exist_ok=True)
     return images_dir
+
+def get_backup_directory():
+    """백업 저장 디렉토리의 절대 경로를 반환합니다."""
+    app_dir = get_app_directory()
+    backup_dir = os.path.join(app_dir, "backup")
+    os.makedirs(backup_dir, exist_ok=True)
+    return backup_dir
 
 # AI 테스터 모듈 import (숨김)
 # try:
@@ -1577,7 +1586,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.8"
+    VERSION = "v2.2.9"
     
     @property
     def SAVE_FILE(self):
@@ -1885,6 +1894,22 @@ class PromptBook(QMainWindow):
         load_book_action = QAction("저장된 북 불러오기", self)
         load_book_action.triggered.connect(self.load_saved_book)
         file_menu.addAction(load_book_action)
+        
+        # 구분선 추가
+        file_menu.addSeparator()
+        
+        # 백업 서브메뉴
+        backup_menu = file_menu.addMenu("💾 백업")
+        
+        # 현재 북 리스트 백업
+        backup_action = QAction("📦 현재 북 리스트 백업", self)
+        backup_action.triggered.connect(self.backup_book_list)
+        backup_menu.addAction(backup_action)
+        
+        # 백업된 북 리스트로 복구
+        restore_action = QAction("📥 백업된 북 리스트로 복구", self)
+        restore_action.triggered.connect(self.restore_book_list)
+        backup_menu.addAction(restore_action)
         
         # 테마 메뉴
         theme_menu = menubar.addMenu("테마")
@@ -8652,6 +8677,329 @@ class PromptBook(QMainWindow):
         
         # 다이얼로그 표시
         dialog.exec()
+
+    def generate_encryption_key(self, password):
+        """비밀번호로부터 암호화 키 생성"""
+        # 비밀번호를 해시하여 32바이트 키 생성
+        key = hashlib.sha256(password.encode()).digest()
+        return base64.urlsafe_b64encode(key)
+
+    def backup_book_list(self):
+        """현재 북 리스트를 암호화하여 백업"""
+        try:
+            # 백업할 데이터가 있는지 확인
+            if not hasattr(self, 'books') or not self.books:
+                QMessageBox.warning(self, "백업 실패", "백업할 북이 없습니다.")
+                return
+
+            # 백업 디렉토리 생성
+            backup_dir = get_backup_directory()
+            
+            # 현재 시간으로 백업 파일명 생성
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"booklist_backup_{timestamp}.pbk"
+            backup_path = os.path.join(backup_dir, backup_filename)
+            
+            # 비밀번호 입력 대화상자
+            password, ok = QInputDialog.getText(
+                self, 
+                "백업 암호화", 
+                "백업 파일을 암호화할 비밀번호를 입력하세요:\n(복구 시 동일한 비밀번호가 필요합니다)",
+                QLineEdit.Password
+            )
+            
+            if not ok or not password:
+                return
+            
+            # 진행 상황 대화상자
+            progress = QProgressDialog("북 리스트 백업 중...", "취소", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.show()
+            QApplication.processEvents()
+            
+            # 백업할 데이터 준비
+            backup_data = {
+                "version": self.VERSION,
+                "timestamp": timestamp,
+                "books": self.books,
+                "images": {}
+            }
+            
+            progress.setValue(20)
+            QApplication.processEvents()
+            
+            # 이미지 파일들을 base64로 인코딩하여 포함
+            images_dir = get_images_directory()
+            if os.path.exists(images_dir):
+                for filename in os.listdir(images_dir):
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                        image_path = os.path.join(images_dir, filename)
+                        try:
+                            with open(image_path, 'rb') as f:
+                                image_data = base64.b64encode(f.read()).decode('utf-8')
+                                backup_data["images"][filename] = image_data
+                        except Exception as e:
+                            print(f"이미지 백업 실패 {filename}: {e}")
+            
+            progress.setValue(60)
+            QApplication.processEvents()
+            
+            # JSON으로 직렬화
+            json_data = json.dumps(backup_data, ensure_ascii=False, indent=2)
+            
+            # 암호화
+            key = self.generate_encryption_key(password)
+            fernet = Fernet(key)
+            encrypted_data = fernet.encrypt(json_data.encode('utf-8'))
+            
+            progress.setValue(80)
+            QApplication.processEvents()
+            
+            # ZIP 파일로 압축
+            with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                zipf.writestr("backup.dat", encrypted_data)
+                # 메타데이터 추가 (암호화되지 않음)
+                metadata = {
+                    "created": timestamp,
+                    "version": self.VERSION,
+                    "book_count": len(self.books),
+                    "image_count": len(backup_data["images"])
+                }
+                zipf.writestr("metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2))
+            
+            progress.setValue(100)
+            QApplication.processEvents()
+            progress.close()
+            
+            # 성공 메시지
+            QMessageBox.information(
+                self,
+                "백업 완료",
+                f"북 리스트가 성공적으로 백업되었습니다.\n\n"
+                f"백업 파일: {backup_filename}\n"
+                f"백업 시간: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"북 개수: {len(self.books)}개\n"
+                f"이미지 개수: {len(backup_data['images'])}개\n\n"
+                f"⚠️ 비밀번호를 잊지 마세요!"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "백업 실패",
+                f"백업 중 오류가 발생했습니다:\n{str(e)}"
+            )
+
+    def restore_book_list(self):
+        """백업된 북 리스트로 복구"""
+        try:
+            backup_dir = get_backup_directory()
+            
+            # 백업 파일 목록 가져오기
+            backup_files = []
+            if os.path.exists(backup_dir):
+                for filename in os.listdir(backup_dir):
+                    if filename.endswith('.pbk'):
+                        backup_path = os.path.join(backup_dir, filename)
+                        try:
+                            # 메타데이터 읽기
+                            with zipfile.ZipFile(backup_path, 'r') as zipf:
+                                if 'metadata.json' in zipf.namelist():
+                                    metadata_str = zipf.read('metadata.json').decode('utf-8')
+                                    metadata = json.loads(metadata_str)
+                                    backup_files.append({
+                                        'filename': filename,
+                                        'path': backup_path,
+                                        'metadata': metadata
+                                    })
+                        except Exception as e:
+                            print(f"백업 파일 메타데이터 읽기 실패 {filename}: {e}")
+            
+            if not backup_files:
+                QMessageBox.warning(self, "복구 실패", "백업 파일을 찾을 수 없습니다.")
+                return
+            
+            # 백업 파일 선택 대화상자
+            dialog = QDialog(self)
+            dialog.setWindowTitle("백업 파일 선택")
+            dialog.setFixedSize(500, 400)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # 안내 메시지
+            info_label = QLabel("복구할 백업 파일을 선택하세요:")
+            info_label.setStyleSheet("font-weight: bold; margin-bottom: 10px;")
+            layout.addWidget(info_label)
+            
+            # 백업 파일 목록
+            file_list = QListWidget()
+            for backup_info in backup_files:
+                metadata = backup_info['metadata']
+                created_time = datetime.datetime.strptime(metadata['created'], "%Y%m%d_%H%M%S")
+                display_text = (
+                    f"📅 {created_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"📚 북 {metadata['book_count']}개, 🖼️ 이미지 {metadata['image_count']}개\n"
+                    f"📁 {backup_info['filename']}"
+                )
+                
+                item = QListWidgetItem(display_text)
+                item.setData(Qt.UserRole, backup_info)
+                file_list.addItem(item)
+            
+            layout.addWidget(file_list)
+            
+            # 경고 메시지
+            warning_label = QLabel(
+                "⚠️ 경고: 현재 북 리스트를 모두 삭제하고 백업된 시점으로 되돌립니다.\n"
+                "이 작업은 되돌릴 수 없습니다!"
+            )
+            warning_label.setStyleSheet("color: red; font-weight: bold; margin: 10px 0;")
+            warning_label.setWordWrap(True)
+            layout.addWidget(warning_label)
+            
+            # 버튼
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            
+            cancel_btn = QPushButton("취소")
+            cancel_btn.clicked.connect(dialog.reject)
+            button_layout.addWidget(cancel_btn)
+            
+            restore_btn = QPushButton("복구")
+            restore_btn.clicked.connect(dialog.accept)
+            restore_btn.setEnabled(False)
+            button_layout.addWidget(restore_btn)
+            
+            layout.addLayout(button_layout)
+            
+            # 선택 변경 시 복구 버튼 활성화
+            def on_selection_changed():
+                restore_btn.setEnabled(len(file_list.selectedItems()) > 0)
+            
+            file_list.itemSelectionChanged.connect(on_selection_changed)
+            
+            # 대화상자 실행
+            if dialog.exec() != QDialog.Accepted:
+                return
+            
+            selected_items = file_list.selectedItems()
+            if not selected_items:
+                return
+            
+            backup_info = selected_items[0].data(Qt.UserRole)
+            
+            # 최종 확인
+            metadata = backup_info['metadata']
+            created_time = datetime.datetime.strptime(metadata['created'], "%Y%m%d_%H%M%S")
+            
+            reply = QMessageBox.question(
+                self,
+                "복구 확인",
+                f"다음 백업으로 복구하시겠습니까?\n\n"
+                f"📅 백업 시간: {created_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"📚 북 개수: {metadata['book_count']}개\n"
+                f"🖼️ 이미지 개수: {metadata['image_count']}개\n\n"
+                f"⚠️ 현재 모든 북이 삭제되고 백업 시점으로 되돌아갑니다!",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # 비밀번호 입력
+            password, ok = QInputDialog.getText(
+                self,
+                "백업 복호화",
+                "백업 파일의 비밀번호를 입력하세요:",
+                QLineEdit.Password
+            )
+            
+            if not ok or not password:
+                return
+            
+            # 진행 상황 대화상자
+            progress = QProgressDialog("북 리스트 복구 중...", "취소", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.show()
+            QApplication.processEvents()
+            
+            # 백업 파일 읽기 및 복호화
+            with zipfile.ZipFile(backup_info['path'], 'r') as zipf:
+                encrypted_data = zipf.read('backup.dat')
+            
+            progress.setValue(20)
+            QApplication.processEvents()
+            
+            # 복호화
+            try:
+                key = self.generate_encryption_key(password)
+                fernet = Fernet(key)
+                decrypted_data = fernet.decrypt(encrypted_data)
+                json_data = decrypted_data.decode('utf-8')
+                backup_data = json.loads(json_data)
+            except Exception as e:
+                progress.close()
+                QMessageBox.critical(
+                    self,
+                    "복구 실패",
+                    "비밀번호가 틀렸거나 백업 파일이 손상되었습니다."
+                )
+                return
+            
+            progress.setValue(40)
+            QApplication.processEvents()
+            
+            # 현재 데이터 백업 (안전장치)
+            current_backup = {
+                "books": self.books if hasattr(self, 'books') else {},
+                "timestamp": datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            }
+            
+            # 이미지 복원
+            images_dir = get_images_directory()
+            if backup_data.get("images"):
+                for filename, image_data in backup_data["images"].items():
+                    try:
+                        image_path = os.path.join(images_dir, filename)
+                        with open(image_path, 'wb') as f:
+                            f.write(base64.b64decode(image_data))
+                    except Exception as e:
+                        print(f"이미지 복원 실패 {filename}: {e}")
+            
+            progress.setValue(70)
+            QApplication.processEvents()
+            
+            # 북 데이터 복원
+            self.books = backup_data.get("books", {})
+            
+            # UI 새로고침
+            self.refresh_book_list()
+            self.clear_page_list()
+            
+            # 데이터 저장
+            self.save_to_file()
+            
+            progress.setValue(100)
+            QApplication.processEvents()
+            progress.close()
+            
+            # 성공 메시지
+            QMessageBox.information(
+                self,
+                "복구 완료",
+                f"북 리스트가 성공적으로 복구되었습니다.\n\n"
+                f"📅 백업 시간: {created_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"📚 복구된 북: {len(self.books)}개\n"
+                f"🖼️ 복구된 이미지: {len(backup_data.get('images', {}))}개"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "복구 실패",
+                f"복구 중 오류가 발생했습니다:\n{str(e)}"
+            )
 
     # def show_ai_tester(self):
     #     """AI 기능 테스터 대화상자 표시"""
