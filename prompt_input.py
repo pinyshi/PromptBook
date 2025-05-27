@@ -228,18 +228,25 @@ class PromptInput(QMainWindow):
         # 상태바 숨기기
         self.statusBar().hide()
         
-        # 아이콘 설정 (PyInstaller 리소스 포함)
+        # 아이콘 설정 (프롬프트 입력기 전용 아이콘)
         try:
             if getattr(sys, 'frozen', False):
                 # PyInstaller로 빌드된 exe에서는 임시 폴더의 아이콘 사용
-                icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+                icon_path = os.path.join(sys._MEIPASS, "prompt_input_icon.ico")
                 if os.path.exists(icon_path):
                     self.setWindowIcon(QIcon(icon_path))
                 else:
-                    print("[DEBUG] 내장된 아이콘 파일을 찾을 수 없습니다.")
+                    # 대체 아이콘 시도
+                    fallback_path = os.path.join(sys._MEIPASS, "icon.ico")
+                    if os.path.exists(fallback_path):
+                        self.setWindowIcon(QIcon(fallback_path))
+                    else:
+                        print("[DEBUG] 내장된 아이콘 파일을 찾을 수 없습니다.")
             else:
                 # 개발 환경에서는 로컬 아이콘 파일 사용
-                if os.path.exists("icon.ico"):
+                if os.path.exists("prompt_input_icon.ico"):
+                    self.setWindowIcon(QIcon("prompt_input_icon.ico"))
+                elif os.path.exists("icon.ico"):
                     self.setWindowIcon(QIcon("icon.ico"))
                 elif os.path.exists("icon.png"):
                     self.setWindowIcon(QIcon("icon.png"))
@@ -560,19 +567,26 @@ class PromptInput(QMainWindow):
         # 트레이 아이콘 생성
         self.tray_icon = QSystemTrayIcon(self)
         
-        # 아이콘 설정
+        # 트레이 아이콘 설정 (프롬프트 입력기 전용 아이콘)
         try:
             if getattr(sys, 'frozen', False):
                 # PyInstaller로 빌드된 exe에서는 임시 폴더의 아이콘 사용
-                icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+                icon_path = os.path.join(sys._MEIPASS, "prompt_input_icon.ico")
                 if os.path.exists(icon_path):
                     self.tray_icon.setIcon(QIcon(icon_path))
                 else:
-                    # 기본 아이콘 사용
-                    self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+                    # 대체 아이콘 시도
+                    fallback_path = os.path.join(sys._MEIPASS, "icon.ico")
+                    if os.path.exists(fallback_path):
+                        self.tray_icon.setIcon(QIcon(fallback_path))
+                    else:
+                        # 기본 아이콘 사용
+                        self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
             else:
                 # 개발 환경에서는 로컬 아이콘 파일 사용
-                if os.path.exists("icon.ico"):
+                if os.path.exists("prompt_input_icon.ico"):
+                    self.tray_icon.setIcon(QIcon("prompt_input_icon.ico"))
+                elif os.path.exists("icon.ico"):
                     self.tray_icon.setIcon(QIcon("icon.ico"))
                 elif os.path.exists("icon.png"):
                     self.tray_icon.setIcon(QIcon("icon.png"))
@@ -827,8 +841,29 @@ def main():
         
         # 애플리케이션 정보 설정
         app.setApplicationName("프롬프트 입력기")
-        app.setApplicationVersion("1.0")
+        app.setApplicationVersion("1.5")
         app.setOrganizationName("PromptBook")
+        
+        # 애플리케이션 아이콘 설정 (작업표시줄 아이콘)
+        try:
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 exe에서는 임시 폴더의 아이콘 사용
+                icon_path = os.path.join(sys._MEIPASS, "prompt_input_icon.ico")
+                if os.path.exists(icon_path):
+                    app.setWindowIcon(QIcon(icon_path))
+                else:
+                    # 대체 아이콘 시도
+                    fallback_path = os.path.join(sys._MEIPASS, "icon.ico")
+                    if os.path.exists(fallback_path):
+                        app.setWindowIcon(QIcon(fallback_path))
+            else:
+                # 개발 환경에서는 로컬 아이콘 파일 사용
+                if os.path.exists("prompt_input_icon.ico"):
+                    app.setWindowIcon(QIcon("prompt_input_icon.ico"))
+                elif os.path.exists("icon.ico"):
+                    app.setWindowIcon(QIcon("icon.ico"))
+        except Exception as e:
+            print(f"[DEBUG] 애플리케이션 아이콘 설정 실패: {e}")
         
         # 메인 윈도우 생성 및 표시
         window = PromptInput()

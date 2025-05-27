@@ -5,7 +5,7 @@ a = Analysis(
     ['prompt_input.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.')],
+    datas=[('prompt_input_icon.ico', '.'), ('icon.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['icon.ico'],
+    icon=['prompt_input_icon.ico'],
 )

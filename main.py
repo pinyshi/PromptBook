@@ -1141,6 +1141,9 @@ class PromptBook(QMainWindow):
 
         # 창 고정 상태 변수 추가
         self.always_on_top = False
+        
+        # 시스템 트레이 상주 상태 변수
+        self.stay_in_tray = False
 
         # UI 관련 변수 초기화
         self.book_list = None
@@ -1227,6 +1230,9 @@ class PromptBook(QMainWindow):
         
         # 리사이즈 핸들 설정
         self.setup_resize_handles()
+        
+        # 시스템 트레이 설정
+        self.setup_system_tray()
 
     def setup_ui(self):
         self.setWindowTitle("프롬프트 북")
@@ -1878,7 +1884,8 @@ class PromptBook(QMainWindow):
             "custom_background_image": getattr(self, "custom_background_image", None),
             "custom_transparency_level": getattr(self, "custom_transparency_level", 0.5),
             "custom_image_brightness": getattr(self, "custom_image_brightness", 50),
-            "always_on_top": getattr(self, "always_on_top", False)
+            "always_on_top": getattr(self, "always_on_top", False),
+            "stay_in_tray": getattr(self, "stay_in_tray", False)
         }
         try:
             with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
@@ -1927,6 +1934,9 @@ class PromptBook(QMainWindow):
                 
                 # 창 고정 상태 복원
                 self.always_on_top = settings.get("always_on_top", False)
+                
+                # 시스템 트레이 상주 상태 복원
+                self.stay_in_tray = settings.get("stay_in_tray", False)
             
         except Exception as e:
             print(f"[ERROR] 초기 UI 설정 불러오기 실패: {e}")
@@ -2008,8 +2018,17 @@ class PromptBook(QMainWindow):
         self.update_all_buttons_state()
 
     def closeEvent(self, event):
-        self.save_ui_settings()
-        super().closeEvent(event)
+        """창 닫기 이벤트 처리"""
+        if self.stay_in_tray and hasattr(self, 'tray_icon') and self.tray_icon.isVisible():
+            # 트레이에 상주하는 경우 창만 숨기기
+            event.ignore()
+            self.hide()
+        else:
+            # 트레이에 상주하지 않는 경우 완전 종료
+            self.save_ui_settings()
+            if hasattr(self, 'tray_icon'):
+                self.tray_icon.hide()
+            event.accept()
 
     def update_all_buttons_state(self):
         enabled = self.current_book is not None
@@ -6430,6 +6449,96 @@ class PromptBook(QMainWindow):
         status_text = "활성화" if self.always_on_top else "비활성화"
         print(f"[DEBUG] 창 맨 위에 고정: {status_text}")
 
+    def setup_system_tray(self):
+        """시스템 트레이 설정"""
+        # 시스템 트레이 지원 확인
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            print("[DEBUG] 시스템 트레이를 사용할 수 없습니다.")
+            return
+        
+        # 트레이 아이콘 생성
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        # 아이콘 설정
+        try:
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 exe에서는 임시 폴더의 아이콘 사용
+                icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+                if os.path.exists(icon_path):
+                    self.tray_icon.setIcon(QIcon(icon_path))
+                else:
+                    # 기본 아이콘 사용
+                    self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+            else:
+                # 개발 환경에서는 로컬 아이콘 파일 사용
+                if os.path.exists("icon.ico"):
+                    self.tray_icon.setIcon(QIcon("icon.ico"))
+                elif os.path.exists("icon.png"):
+                    self.tray_icon.setIcon(QIcon("icon.png"))
+                else:
+                    # 기본 아이콘 사용
+                    self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+        except Exception as e:
+            print(f"[DEBUG] 트레이 아이콘 설정 실패: {e}")
+            # 기본 아이콘 사용
+            self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+        
+        # 트레이 아이콘 툴팁 설정
+        self.tray_icon.setToolTip(f"프롬프트 북 {self.VERSION}")
+        
+        # 트레이 메뉴 생성
+        tray_menu = QMenu()
+        
+        # 창 표시/숨기기
+        show_action = QAction("창 표시", self)
+        show_action.triggered.connect(self.show_window)
+        tray_menu.addAction(show_action)
+        
+        tray_menu.addSeparator()
+        
+        # 종료
+        quit_action = QAction("종료", self)
+        quit_action.triggered.connect(self.quit_application)
+        tray_menu.addAction(quit_action)
+        
+        # 트레이 아이콘에 메뉴 설정
+        self.tray_icon.setContextMenu(tray_menu)
+        
+        # 트레이 아이콘 더블클릭 시 창 표시
+        self.tray_icon.activated.connect(self.on_tray_icon_activated)
+        
+        # 트레이 아이콘 표시
+        self.tray_icon.show()
+
+    def toggle_system_tray(self):
+        """시스템 트레이 상주 토글"""
+        self.stay_in_tray = not self.stay_in_tray
+        
+        # 설정 저장
+        self.save_ui_settings()
+        
+        # 상태 메시지 표시
+        status_text = "활성화" if self.stay_in_tray else "비활성화"
+        print(f"[DEBUG] 프롬프트북 - 시스템 트레이 상주: {status_text}")
+
+    def on_tray_icon_activated(self, reason):
+        """트레이 아이콘 클릭 이벤트 처리"""
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_window()
+
+    def show_window(self):
+        """창 표시"""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def quit_application(self):
+        """애플리케이션 완전 종료"""
+        self.save_ui_settings()
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+        QApplication.quit()
+
     def apply_rounded_corners(self):
         """윈도우에 둥근 모서리 마스크 적용 (정확한 크기 매칭)"""
         # 윈도우 크기 가져오기
@@ -6516,6 +6625,14 @@ class PromptBook(QMainWindow):
             custom_transparency_action = QAction("🎨 커스텀 테마 투명도 조절", self)
             custom_transparency_action.triggered.connect(self.adjust_custom_theme_transparency)
             options_menu.addAction(custom_transparency_action)
+        
+        # 시스템 트레이에 상주
+        tray_action = QAction("🔽 시스템 트레이에 상주 (X로 닫아도 종료되지 않음)", self)
+        tray_action.setCheckable(True)
+        tray_action.setChecked(getattr(self, 'stay_in_tray', False))
+        tray_action.triggered.connect(self.toggle_system_tray)
+        tray_action.setStatusTip("체크하면 X로 닫아도 프로그램이 종료되지 않고 시스템 트레이에 남아있습니다")
+        options_menu.addAction(tray_action)
         
         # 단축키 안내
         shortcuts_action = QAction("⌨️ 단축키 안내", self)
