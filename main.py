@@ -7,6 +7,15 @@ from promptbook_state import PromptBookState
 from promptbook_handlers import PromptBookEventHandlers
 import os, json, csv, shutil, sys, re
 
+# EXIF 정보 읽기를 위한 모듈
+try:
+    from PIL import Image
+    from PIL.ExifTags import TAGS
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("[WARNING] PIL(Pillow) 모듈이 설치되지 않았습니다. EXIF 정보 기능이 제한됩니다.")
+
 def get_app_directory():
     """실행 파일의 디렉토리를 반환합니다."""
     if getattr(sys, 'frozen', False):
@@ -36,6 +45,111 @@ try:
 except ImportError:
     print("send2trash 모듈이 설치되지 않았습니다. pip install send2trash로 설치해 주세요.")
     send2trash = None
+
+class ReadOnlyTextEdit(QTextEdit):
+    """복사 기능이 완전히 활성화된 ReadOnly 텍스트 에디트"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # ReadOnly를 False로 설정하되 편집을 막는 방식 사용
+        self.setReadOnly(False)
+        
+        # 모든 텍스트 상호작용 허용
+        self.setTextInteractionFlags(Qt.TextEditorInteraction)
+        
+        # 편집 방지를 위한 연결
+        self.textChanged.connect(self.prevent_editing)
+        self._original_text = ""
+        self._updating = False
+        
+        # 커스텀 컨텍스트 메뉴 설정
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_custom_context_menu)
+    
+    def prevent_editing(self):
+        """텍스트 변경을 방지"""
+        if not self._updating and self.toPlainText() != self._original_text:
+            self._updating = True
+            self.setPlainText(self._original_text)
+            self._updating = False
+    
+    def setPlainText(self, text):
+        """텍스트 설정 시 원본 텍스트 저장"""
+        self._updating = True
+        super().setPlainText(text)
+        self._original_text = text
+        self._updating = False
+    
+    def show_custom_context_menu(self, position):
+        """커스텀 컨텍스트 메뉴 표시 (복사 관련만)"""
+        menu = QMenu(self)
+        
+        # 복사 액션
+        copy_action = menu.addAction("📄 복사")
+        copy_action.setShortcut(QKeySequence.Copy)
+        copy_action.triggered.connect(self.copy_text)
+        
+        # 전체 선택 액션
+        select_all_action = menu.addAction("🔘 전체 선택")
+        select_all_action.setShortcut(QKeySequence.SelectAll)
+        select_all_action.triggered.connect(self.selectAll)
+        
+        # 선택된 텍스트가 있는지 확인
+        cursor = self.textCursor()
+        has_selection = cursor.hasSelection()
+        
+        # 텍스트가 있는지 확인
+        has_text = bool(self.toPlainText().strip())
+        
+        # 액션 활성화/비활성화
+        copy_action.setEnabled(has_text)
+        select_all_action.setEnabled(has_text)
+        
+        # 선택된 텍스트가 있으면 복사 텍스트 변경
+        if has_selection:
+            copy_action.setText("📄 선택된 텍스트 복사")
+        else:
+            copy_action.setText("📄 전체 텍스트 복사")
+        
+        # 메뉴 표시
+        menu.exec(self.mapToGlobal(position))
+    
+    def copy_text(self):
+        """텍스트 복사"""
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            # 선택된 텍스트 복사
+            selected_text = cursor.selectedText()
+            QApplication.clipboard().setText(selected_text)
+            print(f"[DEBUG] 선택된 텍스트 복사: {len(selected_text)}자")
+        else:
+            # 전체 텍스트 복사
+            text = self.toPlainText()
+            QApplication.clipboard().setText(text)
+            print(f"[DEBUG] 전체 텍스트 복사: {len(text)}자")
+
+    def keyPressEvent(self, event):
+        """키 이벤트 처리"""
+        # Ctrl+C, Ctrl+A, Ctrl+X는 기본 동작 허용
+        if event.modifiers() == Qt.ControlModifier:
+            if event.key() in [Qt.Key_C, Qt.Key_A, Qt.Key_X]:
+                print(f"[DEBUG] 허용된 단축키: Ctrl+{chr(event.key())}")
+                super().keyPressEvent(event)
+                return
+        
+        # 방향키, 선택 관련 키는 허용
+        navigation_keys = [
+            Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down,
+            Qt.Key_Home, Qt.Key_End, Qt.Key_PageUp, Qt.Key_PageDown
+        ]
+        
+        if event.key() in navigation_keys or event.modifiers() & Qt.ShiftModifier:
+            super().keyPressEvent(event)
+            return
+        
+        # 기타 편집 키는 무시
+        print(f"[DEBUG] 차단된 키: {event.key()}")
+        event.ignore()
 
 class ImageView(QGraphicsView):
     def __init__(self, parent=None):
@@ -80,6 +194,11 @@ class ImageView(QGraphicsView):
         self.update_drop_hint_style()
         self.update_drop_hint_position()
         
+        # EXIF 오버레이 위젯
+        self.exif_overlay = QWidget(self.viewport())
+        self.exif_overlay.setVisible(False)
+        self.setup_exif_overlay()
+        
     def resizeEvent(self, event):
         super().resizeEvent(event)
         # 부모 위젯 체인을 따라 PromptBook 인스턴스를 찾습니다
@@ -92,6 +211,8 @@ class ImageView(QGraphicsView):
         # 라벨 위치 및 가시성 업데이트
         self.update_drop_hint_position()
         self.update_drop_hint_visibility()
+        # EXIF 오버레이 위치 업데이트
+        self.update_exif_overlay_position()
         
     def update_drop_hint_position(self):
         if not hasattr(self, 'drop_hint'):
@@ -284,6 +405,508 @@ class ImageView(QGraphicsView):
         image_extensions = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif', '.webp'}
         file_ext = os.path.splitext(file_path)[1].lower()
         return file_ext in image_extensions
+
+    def setup_exif_overlay(self):
+        """EXIF 오버레이 위젯 설정"""
+        # 오버레이 레이아웃
+        overlay_layout = QVBoxLayout(self.exif_overlay)
+        overlay_layout.setContentsMargins(20, 20, 20, 20)
+        overlay_layout.setSpacing(10)
+        
+        # 스크롤 영역
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        # 내용 위젯
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(10, 10, 10, 10)
+        content_layout.setSpacing(8)
+        
+        # 제목
+        title_label = QLabel("이미지 프롬프트 정보")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("font-weight: bold; font-size: 14px; margin-bottom: 10px;")
+        content_layout.addWidget(title_label)
+        
+        # 프롬프트 텍스트 영역 - 커스텀 클래스 사용
+        self.prompt_text_area = ReadOnlyTextEdit()
+        self.prompt_text_area.setMinimumHeight(150)  # 최소 높이만 설정
+        self.prompt_text_area.setPlaceholderText("AI 프롬프트 정보가 여기에 표시됩니다...")
+        
+        # 포커스 정책 설정 (키보드 포커스 허용)
+        self.prompt_text_area.setFocusPolicy(Qt.StrongFocus)
+        
+        content_layout.addWidget(self.prompt_text_area)
+        
+        # 버튼 레이아웃
+        button_layout = QHBoxLayout()
+        
+        # 붙여넣기 버튼
+        self.paste_prompt_btn = QPushButton("📋 입력란에 붙여넣기")
+        self.paste_prompt_btn.clicked.connect(self.paste_prompt_to_input)
+        self.paste_prompt_btn.setToolTip("프롬프트를 입력란에 추가합니다")
+        button_layout.addWidget(self.paste_prompt_btn)
+        
+        # 닫기 버튼
+        close_btn = QPushButton("❌ 닫기")
+        close_btn.clicked.connect(self.hide_exif_overlay)
+        button_layout.addWidget(close_btn)
+        
+        content_layout.addLayout(button_layout)
+        
+        # 스크롤 영역에 내용 설정
+        scroll_area.setWidget(content_widget)
+        overlay_layout.addWidget(scroll_area)
+        
+        # 오버레이 스타일 설정
+        self.update_exif_overlay_style()
+
+    def update_exif_overlay_style(self):
+        """EXIF 오버레이 스타일 업데이트"""
+        # 현재 테마 가져오기
+        theme = self.get_current_theme()
+        if not theme:
+            # 기본 테마
+            bg_color = "rgba(43, 43, 43, 230)"
+            text_color = "#ffffff"
+            border_color = "#555555"
+            button_color = "#404040"
+            button_hover = "#525252"
+        else:
+            # 테마 색상 사용
+            bg_rgb = theme.get('surface', '#3c3c3c').lstrip('#')
+            r = int(bg_rgb[0:2], 16)
+            g = int(bg_rgb[2:4], 16)
+            b = int(bg_rgb[4:6], 16)
+            bg_color = f"rgba({r}, {g}, {b}, 230)"
+            text_color = theme.get('text', '#ffffff')
+            border_color = theme.get('border', '#555555')
+            button_color = theme.get('button', '#404040')
+            button_hover = theme.get('button_hover', '#525252')
+        
+        style = f"""
+            QWidget {{
+                background-color: {bg_color};
+                color: {text_color};
+                border: 2px solid {border_color};
+                border-radius: 10px;
+            }}
+            QTextEdit {{
+                background-color: rgba(0, 0, 0, 100);
+                border: 1px solid {border_color};
+                border-radius: 5px;
+                padding: 8px;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 12px;
+            }}
+            QPushButton {{
+                background-color: {button_color};
+                border: 1px solid {border_color};
+                color: {text_color};
+                padding: 8px 16px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-height: 20px;
+            }}
+            QPushButton:hover {{
+                background-color: {button_hover};
+            }}
+            QScrollArea {{
+                border: none;
+                background-color: transparent;
+            }}
+            QScrollBar:vertical {{
+                background-color: rgba(0, 0, 0, 50);
+                width: 12px;
+                border-radius: 6px;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {border_color};
+                border-radius: 6px;
+                min-height: 20px;
+            }}
+        """
+        self.exif_overlay.setStyleSheet(style)
+
+    def update_exif_overlay_position(self):
+        """EXIF 오버레이 위치 업데이트 (잘리지 않도록 개선)"""
+        if not hasattr(self, 'exif_overlay'):
+            return
+            
+        viewport_rect = self.viewport().rect()
+        print(f"[DEBUG] 뷰포트 크기: {viewport_rect.width()} x {viewport_rect.height()}")
+        
+        # 최소 크기 보장 및 뷰포트에 맞는 크기 계산
+        min_width = 400
+        min_height = 300
+        max_width = max(min_width, int(viewport_rect.width() * 0.9))  # 90%로 증가
+        max_height = max(min_height, int(viewport_rect.height() * 0.9))  # 90%로 증가
+        
+        # 실제 오버레이 크기 결정
+        overlay_width = min(700, max_width)  # 최대 700px
+        overlay_height = min(500, max_height)  # 최대 500px
+        
+        # 뷰포트보다 큰 경우 뷰포트에 맞춤
+        if overlay_width > viewport_rect.width():
+            overlay_width = viewport_rect.width() - 20  # 여백 20px
+        if overlay_height > viewport_rect.height():
+            overlay_height = viewport_rect.height() - 20  # 여백 20px
+        
+        # 중앙 위치 계산 (음수 방지)
+        x = max(10, (viewport_rect.width() - overlay_width) // 2)
+        y = max(10, (viewport_rect.height() - overlay_height) // 2)
+        
+        print(f"[DEBUG] 오버레이 크기: {overlay_width} x {overlay_height}, 위치: ({x}, {y})")
+        self.exif_overlay.setGeometry(x, y, overlay_width, overlay_height)
+
+    def show_exif_overlay(self, image_path):
+        """EXIF 오버레이 표시"""
+        print(f"[DEBUG] EXIF 오버레이 표시 요청: {image_path}")
+        
+        if not PIL_AVAILABLE:
+            print("[DEBUG] PIL 사용 불가능, 기본 메시지 표시")
+            self.prompt_text_area.setPlainText("PIL(Pillow) 라이브러리가 설치되지 않아 EXIF 정보를 읽을 수 없습니다.\n\npip install Pillow 명령으로 설치해주세요.")
+            self.paste_prompt_btn.setEnabled(False)
+            self.update_exif_overlay_position()
+            self.exif_overlay.setVisible(True)
+            self.exif_overlay.raise_()
+            return
+            
+        try:
+            # 이미지에서 EXIF 정보 추출
+            prompt_info = self.extract_ai_prompt_from_image(image_path)
+            
+            if prompt_info:
+                print(f"[DEBUG] AI 프롬프트 정보 발견: {len(prompt_info)}자")
+                self.prompt_text_area.setPlainText(prompt_info)
+                self.paste_prompt_btn.setEnabled(True)
+            else:
+                print("[DEBUG] AI 프롬프트 정보 없음, 기본 메시지 표시")
+                # 이미지 기본 정보라도 표시
+                basic_info = self.get_basic_image_info(image_path)
+                self.prompt_text_area.setPlainText(f"이 이미지에서 AI 프롬프트 정보를 찾을 수 없습니다.\n\n{basic_info}")
+                self.paste_prompt_btn.setEnabled(False)
+            
+            print("[DEBUG] EXIF 오버레이 표시 중...")
+            self.update_exif_overlay_position()
+            self.exif_overlay.setVisible(True)
+            self.exif_overlay.raise_()
+            print("[DEBUG] EXIF 오버레이 표시 완료")
+            
+        except Exception as e:
+            print(f"[ERROR] EXIF 정보 읽기 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            # 오류가 발생해도 오버레이는 표시
+            self.prompt_text_area.setPlainText(f"EXIF 정보 읽기 중 오류가 발생했습니다:\n{str(e)}")
+            self.paste_prompt_btn.setEnabled(False)
+            self.update_exif_overlay_position()
+            self.exif_overlay.setVisible(True)
+            self.exif_overlay.raise_()
+
+    def hide_exif_overlay(self):
+        """EXIF 오버레이 숨기기"""
+        self.exif_overlay.setVisible(False)
+        
+        # 부모 PromptBook에서 체크박스 해제
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, PromptBook):
+                parent.exif_checkbox.setChecked(False)
+                break
+            parent = parent.parent()
+
+    def get_basic_image_info(self, image_path):
+        """이미지 기본 정보 가져오기"""
+        try:
+            if not PIL_AVAILABLE:
+                return "PIL 라이브러리가 필요합니다."
+            
+            import os
+            from PIL import Image
+            
+            with Image.open(image_path) as img:
+                # 파일 크기
+                file_size = os.path.getsize(image_path)
+                size_mb = file_size / (1024 * 1024)
+                
+                info_text = f"""📸 이미지 기본 정보:
+• 파일명: {os.path.basename(image_path)}
+• 포맷: {img.format}
+• 크기: {img.width} × {img.height} 픽셀
+• 모드: {img.mode}
+• 파일 크기: {size_mb:.2f} MB
+
+💡 이 이미지는 AI 생성 이미지가 아니거나, 
+   메타데이터에 프롬프트 정보가 포함되지 않았습니다.
+
+🔍 지원하는 AI 도구:
+• Stable Diffusion (PNG 메타데이터)
+• DALL-E (EXIF description)
+• Midjourney (다양한 메타데이터)
+• 기타 AI 이미지 생성 도구"""
+                
+                return info_text
+                
+        except Exception as e:
+            return f"이미지 정보 읽기 실패: {str(e)}"
+
+    def extract_ai_prompt_from_image(self, image_path):
+        """이미지에서 AI 프롬프트 정보 추출"""
+        if not PIL_AVAILABLE:
+            print("[DEBUG] PIL 라이브러리가 사용 불가능합니다.")
+            return None
+            
+        try:
+            print(f"[DEBUG] EXIF 정보 추출 시도: {image_path}")
+            with Image.open(image_path) as img:
+                print(f"[DEBUG] 이미지 포맷: {img.format}")
+                print(f"[DEBUG] 이미지 모드: {img.mode}")
+                
+                # EXIF 데이터 가져오기
+                exif_data = img.getexif()
+                print(f"[DEBUG] EXIF 데이터 개수: {len(exif_data)}")
+                
+                # 모든 EXIF 데이터 출력 (디버깅용)
+                if exif_data:
+                    print("[DEBUG] EXIF 데이터:")
+                    for tag_id, value in exif_data.items():
+                        tag_name = TAGS.get(tag_id, tag_id)
+                        print(f"  {tag_name} ({tag_id}): {str(value)[:100]}...")
+                
+                # PNG 텍스트 정보 확인
+                if hasattr(img, 'text') and img.text:
+                    print(f"[DEBUG] PNG 텍스트 정보 개수: {len(img.text)}")
+                    for key, value in img.text.items():
+                        print(f"  {key}: {str(value)[:100]}...")
+                
+                # 기타 info 확인
+                if hasattr(img, 'info') and img.info:
+                    print(f"[DEBUG] 기타 info 개수: {len(img.info)}")
+                    for key, value in img.info.items():
+                        print(f"  {key}: {str(value)[:100]}...")
+                
+                # 일반적인 AI 생성 이미지 메타데이터 필드들
+                ai_fields = [
+                    'prompt', 'Prompt', 'PROMPT',
+                    'positive_prompt', 'Positive Prompt',
+                    'parameters', 'Parameters', 'PARAMETERS',
+                    'generation_data', 'Generation Data',
+                    'stable_diffusion', 'Stable Diffusion',
+                    'midjourney', 'Midjourney',
+                    'dalle', 'DALL-E', 'dall-e',
+                    'description', 'Description', 'DESCRIPTION',
+                    'UserComment', 'ImageDescription', 'Comment',
+                    'Software', 'Artist', 'Copyright'
+                ]
+                
+                # EXIF 데이터에서 AI 프롬프트 찾기
+                for tag_id, value in exif_data.items():
+                    tag_name = TAGS.get(tag_id, tag_id)
+                    if isinstance(value, str) and len(value) > 10:  # 길이 조건 완화
+                        print(f"[DEBUG] EXIF 검사: {tag_name} = {value[:50]}...")
+                        for field in ai_fields:
+                            if (field.lower() in tag_name.lower() or 
+                                field.lower() in value.lower()[:100]):
+                                print(f"[DEBUG] EXIF에서 AI 프롬프트 발견: {tag_name}")
+                                # NovelAI V4 프롬프트 파싱 시도
+                                parsed_prompt = self.parse_novelai_prompt(value)
+                                return parsed_prompt if parsed_prompt else value
+                
+                # PNG 정보 확인 (PNG 메타데이터)
+                if hasattr(img, 'text'):
+                    for key, value in img.text.items():
+                        if isinstance(value, str) and len(value) > 10:
+                            print(f"[DEBUG] PNG 텍스트 검사: {key} = {value[:50]}...")
+                            for field in ai_fields:
+                                if field.lower() in key.lower():
+                                    print(f"[DEBUG] PNG에서 AI 프롬프트 발견: {key}")
+                                    # NovelAI V4 프롬프트 파싱 시도
+                                    parsed_prompt = self.parse_novelai_prompt(value)
+                                    return parsed_prompt if parsed_prompt else value
+                
+                # 기타 메타데이터 확인
+                if hasattr(img, 'info'):
+                    for key, value in img.info.items():
+                        if isinstance(value, str) and len(value) > 10:
+                            print(f"[DEBUG] Info 검사: {key} = {str(value)[:50]}...")
+                            for field in ai_fields:
+                                if field.lower() in str(key).lower():
+                                    print(f"[DEBUG] Info에서 AI 프롬프트 발견: {key}")
+                                    # NovelAI V4 프롬프트 파싱 시도
+                                    parsed_prompt = self.parse_novelai_prompt(value)
+                                    return parsed_prompt if parsed_prompt else value
+                
+                # 특별한 경우: 모든 긴 텍스트 필드 검사
+                all_text_data = []
+                
+                # EXIF에서 긴 텍스트 수집
+                for tag_id, value in exif_data.items():
+                    if isinstance(value, str) and len(value) > 50:
+                        all_text_data.append(f"EXIF-{TAGS.get(tag_id, tag_id)}: {value}")
+                
+                # PNG 텍스트에서 수집
+                if hasattr(img, 'text'):
+                    for key, value in img.text.items():
+                        if isinstance(value, str) and len(value) > 50:
+                            all_text_data.append(f"PNG-{key}: {value}")
+                
+                # Info에서 수집
+                if hasattr(img, 'info'):
+                    for key, value in img.info.items():
+                        if isinstance(value, str) and len(value) > 50:
+                            all_text_data.append(f"Info-{key}: {value}")
+                
+                if all_text_data:
+                    print(f"[DEBUG] 발견된 긴 텍스트 데이터 {len(all_text_data)}개:")
+                    for data in all_text_data:
+                        print(f"  {data[:100]}...")
+                    # 첫 번째 긴 텍스트를 반환 (NovelAI 파싱 시도)
+                    raw_text = all_text_data[0].split(': ', 1)[1] if ': ' in all_text_data[0] else all_text_data[0]
+                    parsed_prompt = self.parse_novelai_prompt(raw_text)
+                    return parsed_prompt if parsed_prompt else raw_text
+                
+                print("[DEBUG] AI 프롬프트 정보를 찾을 수 없습니다.")
+                return None
+                
+        except Exception as e:
+            print(f"[ERROR] 이미지 메타데이터 읽기 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def parse_novelai_prompt(self, raw_prompt):
+        """NovelAI V4 프롬프트를 구조화된 형태로 파싱"""
+        try:
+            import json
+            
+            # JSON 형태인지 확인
+            if raw_prompt.strip().startswith('{') and raw_prompt.strip().endswith('}'):
+                print("[DEBUG] NovelAI JSON 프롬프트 파싱 시도")
+                prompt_data = json.loads(raw_prompt)
+                
+
+                # NovelAI V4 구조 확인
+                if 'prompt' in prompt_data:
+                    formatted_prompt = ""
+                    
+                    # 메인 프롬프트
+                    main_prompt = prompt_data.get('prompt', '')
+                    if main_prompt:
+                        formatted_prompt += "📝 메인 프롬프트:\n"
+                        formatted_prompt += f"{main_prompt}\n\n"
+                    
+                    # 네거티브 프롬프트
+                    negative_prompt = prompt_data.get('uc', '')
+                    if negative_prompt:
+                        formatted_prompt += "🚫 메인 네거티브:\n"
+                        formatted_prompt += f"{negative_prompt}\n\n"
+                    
+                    # V4 캐릭터 정보 파싱
+                    v4_prompt = prompt_data.get('v4_prompt', {})
+                    v4_negative = prompt_data.get('v4_negative_prompt', {})
+                    
+                    # 캐릭터 프롬프트 추출
+                    char_prompts = []
+                    char_negatives = []
+                    
+                    if v4_prompt and isinstance(v4_prompt, dict) and 'caption' in v4_prompt:
+                        caption_data = v4_prompt['caption']
+                        if isinstance(caption_data, dict) and 'char_captions' in caption_data:
+                            char_captions = caption_data['char_captions']
+                            if isinstance(char_captions, list):
+                                for char_data in char_captions:
+                                    if isinstance(char_data, dict) and 'char_caption' in char_data:
+                                        char_prompts.append(char_data['char_caption'])
+                    
+                    if v4_negative and isinstance(v4_negative, dict) and 'caption' in v4_negative:
+                        caption_data = v4_negative['caption']
+                        if isinstance(caption_data, dict) and 'char_captions' in caption_data:
+                            char_captions = caption_data['char_captions']
+                            if isinstance(char_captions, list):
+                                for char_data in char_captions:
+                                    if isinstance(char_data, dict) and 'char_caption' in char_data:
+                                        char_negatives.append(char_data['char_caption'])
+                    
+                    # 캐릭터 정보 표시
+                    max_chars = max(len(char_prompts), len(char_negatives))
+                    if max_chars > 0:
+                        for i in range(max_chars):
+                            if i < len(char_prompts) and char_prompts[i]:
+                                formatted_prompt += f"👥 캐릭터{i+1} 프롬프트:\n"
+                                formatted_prompt += f"{char_prompts[i]}\n\n"
+                            
+                            if i < len(char_negatives) and char_negatives[i]:
+                                formatted_prompt += f"🚫 캐릭터{i+1} 네거티브:\n"
+                                formatted_prompt += f"{char_negatives[i]}\n\n"
+                    
+                    print(f"[DEBUG] NovelAI 프롬프트 파싱 완료: {len(formatted_prompt)}자")
+                    return formatted_prompt
+                    
+            # JSON이 아니거나 NovelAI 형식이 아닌 경우
+            print("[DEBUG] NovelAI 형식이 아님, 원본 반환")
+            return None
+            
+        except json.JSONDecodeError:
+            print("[DEBUG] JSON 파싱 실패, 원본 반환")
+            return None
+        except Exception as e:
+            print(f"[DEBUG] NovelAI 프롬프트 파싱 오류: {e}")
+            return None
+
+    def eventFilter(self, obj, event):
+        """이벤트 필터 - 기본 동작 허용"""
+        return super().eventFilter(obj, event)
+
+    def copy_selected_text(self):
+        """선택된 텍스트를 클립보드에 복사 (버튼용)"""
+        try:
+            cursor = self.prompt_text_area.textCursor()
+            selected_text = cursor.selectedText()
+            
+            if selected_text:
+                QApplication.clipboard().setText(selected_text)
+                print(f"[DEBUG] 선택된 텍스트 복사됨: {len(selected_text)}자")
+            else:
+                text = self.prompt_text_area.toPlainText()
+                if text.strip():
+                    QApplication.clipboard().setText(text)
+                    print(f"[DEBUG] 전체 텍스트 복사됨: {len(text)}자")
+                    
+        except Exception as e:
+            print(f"[ERROR] 텍스트 복사 실패: {e}")
+
+
+
+    def paste_prompt_to_input(self):
+        """프롬프트를 입력란에 붙여넣기"""
+        # 부모 PromptBook 인스턴스 찾기
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, PromptBook):
+                current_text = parent.prompt_input.toPlainText()
+                new_text = self.prompt_text_area.toPlainText()
+                
+                if current_text.strip():
+                    # 기존 텍스트가 있으면 줄바꿈 후 추가
+                    combined_text = current_text + "\n\n" + new_text
+                else:
+                    # 기존 텍스트가 없으면 그대로 추가
+                    combined_text = new_text
+                
+                parent.prompt_input.setPlainText(combined_text)
+                self.hide_exif_overlay()
+                
+                # 툴팁 표시
+                QToolTip.showText(
+                    self.paste_prompt_btn.mapToGlobal(self.paste_prompt_btn.rect().center()),
+                    "프롬프트가 입력란에 추가되었습니다!"
+                )
+                break
+            parent = parent.parent()
 
 
 
@@ -954,7 +1577,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.2.7"
+    VERSION = "v2.2.8"
     
     @property
     def SAVE_FILE(self):
@@ -1487,8 +2110,16 @@ class PromptBook(QMainWindow):
         self.image_remove_btn.clicked.connect(self.remove_preview_image)
         self.image_remove_btn.setEnabled(False)
         
+        # EXIF 정보 보기 체크박스
+        self.exif_checkbox = QCheckBox("🔍 프롬프트 보기")
+        self.exif_checkbox.setToolTip("AI 생성 이미지의 프롬프트 정보를 오버레이로 표시합니다")
+        self.exif_checkbox.setEnabled(False)
+        self.exif_checkbox.stateChanged.connect(self.on_exif_checkbox_changed)
+        self._exif_programmatic_change = False  # 프로그래밍적 변경 플래그
+        
         image_button_layout.addWidget(self.image_load_btn)
         image_button_layout.addWidget(self.image_remove_btn)
+        image_button_layout.addWidget(self.exif_checkbox)
         
         self.right_layout.addLayout(image_button_layout)
 
@@ -2144,6 +2775,13 @@ class PromptBook(QMainWindow):
             self.image_scene.clear()
             self.image_view.update_drop_hint_visibility()
             
+            # EXIF 체크박스 해제 (다중 선택 시)
+            if hasattr(self, 'exif_checkbox'):
+                self._exif_programmatic_change = True
+                self.exif_checkbox.setChecked(False)
+                self._exif_programmatic_change = False
+                self.image_view.hide_exif_overlay()
+            
             self.update_all_buttons_state()
             return
         
@@ -2178,6 +2816,13 @@ class PromptBook(QMainWindow):
             self.prompt_input.clear()
             self.image_scene.clear()
             self.image_view.update_drop_hint_visibility()  # 드롭 힌트 가시성 업데이트
+            
+            # EXIF 체크박스 해제 (북 변경 시)
+            if hasattr(self, 'exif_checkbox'):
+                self._exif_programmatic_change = True
+                self.exif_checkbox.setChecked(False)
+                self._exif_programmatic_change = False
+                self.image_view.hide_exif_overlay()
         else:
             # 북이 선택되지 않은 경우
             self.current_book = None
@@ -2186,6 +2831,13 @@ class PromptBook(QMainWindow):
             self.add_button.setEnabled(False)
             self.image_scene.clear()
             self.image_view.update_drop_hint_visibility()  # 드롭 힌트 가시성 업데이트
+            
+            # EXIF 체크박스 해제 (북 선택 해제 시)
+            if hasattr(self, 'exif_checkbox'):
+                self._exif_programmatic_change = True
+                self.exif_checkbox.setChecked(False)
+                self._exif_programmatic_change = False
+                self.image_view.hide_exif_overlay()
             
         self.update_all_buttons_state()
 
@@ -2447,6 +3099,13 @@ class PromptBook(QMainWindow):
             self.image_scene.clear()
             self.image_view.update_drop_hint_visibility()
             
+            # EXIF 체크박스 상태 초기화 (다중 선택 시에는 해제)
+            if hasattr(self, 'exif_checkbox'):
+                self._exif_programmatic_change = True
+                self.exif_checkbox.setChecked(False)
+                self._exif_programmatic_change = False
+                self.image_view.hide_exif_overlay()
+            
             self.update_all_buttons_state()
             self.update_image_buttons_state()
         elif len(selected_pages) == 1:
@@ -2492,6 +3151,13 @@ class PromptBook(QMainWindow):
                         self.image_scene.clear()
                         self.image_view.update_drop_hint_visibility()
                     
+                    # EXIF 체크박스 상태 관리 (페이지 변경 시 항상 해제)
+                    if hasattr(self, 'exif_checkbox'):
+                        self._exif_programmatic_change = True
+                        self.exif_checkbox.setChecked(False)
+                        self._exif_programmatic_change = False
+                        self.image_view.hide_exif_overlay()
+                    
                     self.update_all_buttons_state()
                     self.update_image_buttons_state()
                     break
@@ -2512,6 +3178,13 @@ class PromptBook(QMainWindow):
                 self.lock_checkbox.setEnabled(False)
             self.image_scene.clear()
             self.image_view.update_drop_hint_visibility()
+            
+            # EXIF 체크박스 상태 초기화 (선택 해제 시에는 해제)
+            if hasattr(self, 'exif_checkbox'):
+                self._exif_programmatic_change = True
+                self.exif_checkbox.setChecked(False)
+                self._exif_programmatic_change = False
+                self.image_view.hide_exif_overlay()
             
             self.update_all_buttons_state()
             self.update_image_buttons_state()
@@ -3550,6 +4223,44 @@ class PromptBook(QMainWindow):
             has_image = bool(image_path and os.path.exists(image_path))
         
         self.image_remove_btn.setEnabled(has_image)
+        
+        # EXIF 체크박스: 이미지가 있을 때만 활성화
+        self.exif_checkbox.setEnabled(has_image)
+        print(f"[DEBUG] EXIF 체크박스 활성화 상태: {has_image}, 이미지 경로: {image_path if page_selected else '페이지 미선택'}")
+
+    def on_exif_checkbox_changed(self, state):
+        """EXIF 체크박스 상태 변경 처리"""
+        # 프로그래밍적 변경인 경우 무시
+        if hasattr(self, '_exif_programmatic_change') and self._exif_programmatic_change:
+            print(f"[DEBUG] EXIF 체크박스 프로그래밍적 변경 무시: {'체크됨' if state == Qt.Checked else '체크 해제'}")
+            return
+            
+        print(f"[DEBUG] EXIF 체크박스 {'체크됨' if state == 2 else '해제됨'}")
+        
+        if state == 2:  # Qt.Checked 값
+            # 체크되었을 때 EXIF 오버레이 표시
+            print(f"[DEBUG] EXIF 오버레이 표시 시작")
+            print(f"[DEBUG] 현재 인덱스: {self.current_index}, 총 페이지 수: {len(self.state.characters)}")
+            
+            if (self.current_index >= 0 and 
+                self.current_index < len(self.state.characters)):
+                image_path = self.state.characters[self.current_index].get("image_path", "")
+                print(f"[DEBUG] 이미지 경로: {image_path}")
+                
+                if image_path and os.path.exists(image_path):
+                    print(f"[DEBUG] 이미지 파일 존재 확인됨, EXIF 오버레이 표시 시작")
+                    self.image_view.show_exif_overlay(image_path)
+                else:
+                    if not image_path:
+                        print(f"[DEBUG] 이미지 경로가 비어있음")
+                    else:
+                        print(f"[DEBUG] 이미지 파일이 존재하지 않음: {image_path}")
+            else:
+                print(f"[DEBUG] 유효하지 않은 페이지 인덱스")
+        else:
+            # 체크 해제되었을 때 오버레이 숨기기
+            print(f"[DEBUG] EXIF 오버레이 숨김")
+            self.image_view.hide_exif_overlay()
 
     def apply_sorting(self):
         from promptbook_features import sort_characters
@@ -4996,6 +5707,10 @@ class PromptBook(QMainWindow):
         
         # 모든 버튼에 마우스 추적 활성화 (hover 효과를 위해)
         self.enable_button_mouse_tracking()
+        
+        # EXIF 오버레이 스타일 업데이트
+        if hasattr(self, 'image_view') and hasattr(self.image_view, 'update_exif_overlay_style'):
+            self.image_view.update_exif_overlay_style()
         
     def enable_button_mouse_tracking(self):
         """모든 QPushButton에 마우스 추적을 활성화하여 hover 효과가 제대로 작동하도록 합니다."""
