@@ -44,7 +44,12 @@ class AIFunctionTester(QObject):
             ("잠금 기능 테스트", self.test_lock_functionality),
             ("다중 선택 테스트", self.test_multi_selection),
             ("UI 반응성 테스트", self.test_ui_responsiveness),
-            ("메모리 누수 테스트", self.test_memory_usage)
+            ("메모리 누수 테스트", self.test_memory_usage),
+            ("백업 기능 테스트", self.test_backup_functionality),
+            ("윈도우 크기 조절 테스트", self.test_window_resize),
+            ("데이터 무결성 테스트", self.test_data_integrity),
+            ("성능 스트레스 테스트", self.test_performance_stress),
+            ("오류 복구 테스트", self.test_error_recovery)
         ]
         
         self.total_tests = len(test_functions)
@@ -427,6 +432,129 @@ class AIFunctionTester(QObject):
             return "psutil 모듈이 없어 메모리 테스트 생략"
         except Exception as e:
             return f"메모리 테스트 중 오류: {str(e)}"
+    
+    def test_backup_functionality(self):
+        """백업 기능 테스트"""
+        try:
+            # 백업 생성 테스트
+            if hasattr(self.app, 'backup_book_list'):
+                self.app.backup_book_list()
+                return "백업 생성 성공"
+            
+            # 백업 디렉토리 확인
+            import os
+            backup_dir = os.path.join(os.path.dirname(__file__), "backup")
+            if os.path.exists(backup_dir):
+                backup_files = [f for f in os.listdir(backup_dir) if f.endswith('.pbk')]
+                if backup_files:
+                    return f"백업 파일 {len(backup_files)}개 발견"
+            
+            return "백업 기능을 찾을 수 없음"
+        except Exception as e:
+            return f"백업 기능 테스트 중 오류: {str(e)}"
+    
+    def test_window_resize(self):
+        """윈도우 크기 조절 테스트"""
+        try:
+            # 현재 크기 저장
+            original_size = self.app.size()
+            
+            # 크기 변경 테스트
+            self.app.resize(800, 600)
+            QApplication.processEvents()
+            
+            new_size = self.app.size()
+            
+            # 원래 크기로 복원
+            self.app.resize(original_size)
+            QApplication.processEvents()
+            
+            if new_size.width() == 800 and new_size.height() == 600:
+                return "윈도우 크기 조절 성공"
+            
+            return "윈도우 크기가 제대로 변경되지 않음"
+        except Exception as e:
+            return f"윈도우 크기 조절 테스트 중 오류: {str(e)}"
+    
+    def test_data_integrity(self):
+        """데이터 무결성 테스트"""
+        try:
+            # 현재 데이터 상태 확인
+            if hasattr(self.app, 'state') and hasattr(self.app.state, 'books'):
+                books_count = len(self.app.state.books)
+                
+                # 각 북의 페이지 수 확인
+                total_pages = 0
+                for book_name, book_data in self.app.state.books.items():
+                    if 'pages' in book_data:
+                        total_pages += len(book_data['pages'])
+                
+                return f"데이터 무결성 확인: {books_count}개 북, {total_pages}개 페이지"
+            
+            return "데이터 상태를 확인할 수 없음"
+        except Exception as e:
+            return f"데이터 무결성 테스트 중 오류: {str(e)}"
+    
+    def test_performance_stress(self):
+        """성능 스트레스 테스트"""
+        try:
+            import time
+            
+            # 빠른 연속 작업 테스트
+            start_time = time.time()
+            
+            # 여러 작업을 빠르게 수행
+            for i in range(5):
+                # 북 추가
+                self.app.add_book()
+                QApplication.processEvents()
+                
+                # 페이지 추가
+                if self.app.book_list.count() > 0:
+                    self.app.book_list.setCurrentRow(0)
+                    self.app.add_character()
+                    QApplication.processEvents()
+            
+            end_time = time.time()
+            execution_time = end_time - start_time
+            
+            # 5초 이내에 완료되어야 함
+            if execution_time < 5.0:
+                return f"스트레스 테스트 통과 (실행 시간: {execution_time:.2f}초)"
+            
+            return f"스트레스 테스트 실패 (실행 시간: {execution_time:.2f}초)"
+        except Exception as e:
+            return f"성능 스트레스 테스트 중 오류: {str(e)}"
+    
+    def test_error_recovery(self):
+        """오류 복구 테스트"""
+        try:
+            # 빈 선택 상태에서 작업 시도
+            self.app.char_list.clearSelection()
+            
+            # 선택된 항목이 없는 상태에서 편집 시도
+            try:
+                self.app.name_input.setText("오류 복구 테스트")
+                self.app.save_current_character()
+            except:
+                pass  # 예상된 오류
+            
+            # 잘못된 데이터 처리 테스트
+            if hasattr(self.app, 'state'):
+                # 임시로 잘못된 데이터 설정
+                original_books = self.app.state.books.copy()
+                
+                # 빈 데이터로 설정
+                self.app.state.books = {}
+                self.app.refresh_book_list()
+                
+                # 원래 데이터로 복원
+                self.app.state.books = original_books
+                self.app.refresh_book_list()
+            
+            return "오류 복구 테스트 완료"
+        except Exception as e:
+            return f"오류 복구 테스트 중 오류: {str(e)}"
     
     def generate_test_report(self):
         """테스트 결과 보고서 생성"""

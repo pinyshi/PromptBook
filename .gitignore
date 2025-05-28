@@ -37,6 +37,27 @@ ui_settings.json
 character_list.zip
 images/
 autocomplete.txt
+backup/
+data/
 
 # 로그 파일들
-*.log 
+*.log
+
+# 빌드 관련 파일들
+*.spec
+*.exe
+*.msi
+
+# 테스트 파일들
+*test*.py
+test_*
+tests/
+
+# 임시 파일들
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# AI 테스터 토글 (선택사항 - 개발용 도구)
+ai_tester_toggle.py 
