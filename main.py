@@ -9905,6 +9905,15 @@ def show_error_popup(title, message, details=None):
 if __name__ == "__main__":
     try:
         app = QApplication(sys.argv)
+        
+        # 애플리케이션 아이콘 설정 (작업표시줄, 시스템 트레이 등에 표시)
+        icon_path = "promptbook_icon.ico"
+        if os.path.exists(icon_path):
+            app.setWindowIcon(QIcon(icon_path))
+        elif os.path.exists("icon.ico"):
+            app.setWindowIcon(QIcon("icon.ico"))
+        elif os.path.exists("icon.png"):
+            app.setWindowIcon(QIcon("icon.png"))
         window = PromptBook()
         window.show()
         sys.exit(app.exec())
