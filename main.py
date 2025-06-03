@@ -1599,7 +1599,7 @@ class ResizeHandle(QWidget):
 
 class PromptBook(QMainWindow):
     # 클래스 레벨 상수 정의
-    VERSION = "v2.3.6"
+    VERSION = "v2.3.5"
     
     @property
     def SAVE_FILE(self):
@@ -7826,6 +7826,11 @@ class PromptBook(QMainWindow):
         donate_action.triggered.connect(self.show_kakao_info)
         menu.addAction(donate_action)
         
+        # 업데이트 확인
+        update_action = QAction("🔄 업데이트 확인", self)
+        update_action.triggered.connect(self.check_for_updates)
+        menu.addAction(update_action)
+        
         # AI 기능 테스터 (숨김)
         # if AITesterDialog is not None:
         #     ai_tester_action = QAction("🤖 AI 기능 테스터", self)
@@ -9824,6 +9829,25 @@ class PromptBook(QMainWindow):
                 self,
                 "삭제 실패",
                 f"백업 파일 삭제 중 오류가 발생했습니다:\n{str(e)}"
+            )
+
+
+    def check_for_updates(self):
+        """업데이트 확인 및 다운로드"""
+        try:
+            # 현재 버전 가져오기
+            current_version = self.VERSION
+            
+            # 업데이트 다이얼로그 표시
+            from update_dialog import UpdateDialog
+            dialog = UpdateDialog(self, current_version)
+            dialog.exec()
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "업데이트 확인 오류",
+                f"업데이트 확인 중 오류가 발생했습니다:\n{str(e)}"
             )
 
     # def show_ai_tester(self):
