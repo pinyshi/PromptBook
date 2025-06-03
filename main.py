@@ -9408,6 +9408,30 @@ class PromptBook(QMainWindow):
         
         # 다이얼로그 표시
         dialog.exec()
+    def convert_absolute_to_relative_paths(self, books_data):
+        """백업 복구 시 절대경로를 상대경로로 자동 변환"""
+        converted_count = 0
+        for book_name, book_data in books_data.items():
+            if isinstance(book_data, dict) and 'pages' in book_data:
+                for page in book_data['pages']:
+                    if isinstance(page, dict) and 'image_path' in page and page['image_path']:
+                        old_path = page['image_path']
+                        
+                        # 절대 경로인지 확인 (Windows 드라이브 문자 포함)
+                        if os.path.isabs(old_path) or ':\\' in old_path or ':\/' in old_path:
+                            # 파일명만 추출
+                            filename = os.path.basename(old_path)
+                            # 상대 경로로 변환
+                            new_path = os.path.join('images', filename)
+                            page['image_path'] = new_path
+                            converted_count += 1
+                            print(f"[백업 복구] 경로 변환: {old_path} → {new_path}")
+        
+        if converted_count > 0:
+            print(f"[백업 복구] ✅ {converted_count}개 이미지 경로를 상대경로로 자동 변환했습니다.")
+        
+        return books_data
+
 
 
 
@@ -9743,6 +9767,9 @@ class PromptBook(QMainWindow):
             else:
                 restored_books = {}
             
+
+            # 🔧 이미지 경로 자동 변환: 절대경로 → 상대경로
+            restored_books = self.convert_absolute_to_relative_paths(restored_books)
             if hasattr(self, 'state'):
                 self.state.books = restored_books
             else:
